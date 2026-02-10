@@ -1,6 +1,7 @@
 # PicoClaw 調査レポート
 
 > 調査日: 2026-02-10
+> 最終更新: 2026-02-10
 > リポジトリ: https://github.com/sipeed/picoclaw
 > Star: 647 / Fork: 84 / 作成日: 2026-02-04
 
@@ -154,63 +155,46 @@ picoclaw/
 
 ---
 
-## 6. Seireiプロジェクトとの関連性
+## 6. Seireiプロジェクトでの位置づけ
 
-### 要件書での言及
-`SEIREI_REQUIREMENTS.md` セクション4.3にて、PicoClawは「軽量OpenClawフォーク」として以下の文脈で言及されている：
+### 採用判断
 
-> **PicoClaw（軽量OpenClawフォーク）の活用を検討：**
-> - 10MB RAMで$10 RISC-Vハードウェア上で動作
-> - OpenClawの1%のコード、1%のメモリ
-> - 数千の精霊インスタンスを効率的に実行可能
+**PicoClawのフォークは採用しなかった**。代わりにPicoClawの設計思想を参考にしたTypeScript統一スタックを選択。
 
-### 実態との差異
+| 判断基準 | PicoClawフォーク (Go) | TypeScript統一 (採用) |
+|---|---|---|
+| 1人で開発 | △ Go + TSの2言語 | ◎ 1言語で完結 |
+| フロント型共有 | × OpenAPI等で橋渡し | ◎ `src/types/world.ts`を直接共有 |
+| Supabase連携 | △ SDK弱い | ◎ 公式SDK充実 |
+| MVP速度 | ○ | ◎ |
+| 精霊10,000体以上 | ◎ goroutine | △ 工夫必要 |
 
-要件書では「OpenClawフォーク」と記載されているが、実際には：
-- PicoClawは**nanobotのGoリイプリメンテーション**であり、OpenClawのフォークではない
-- Sipeed社のRISC-Vハードウェア（LicheeRV-Nano等）向けに最適化された汎用AIアシスタント
-- 精霊の自律エージェント用途には設計されていない（パーソナルアシスタント用途）
+**Go移行条件**: 同時5,000体超 / メモリ8GB超 / 物理デバイス版。詳細は`ARCHITECTURE.md` §3参照。
 
-### Seireiバックエンドとして活用する場合の評価
+### PicoClawから参考にした設計
 
-| 観点 | 評価 | 詳細 |
-|------|------|------|
-| 軽量性 | ◎ | 10MB RAM、精霊インスタンス数千体の同時実行に有利 |
-| エージェントループ | ○ | observe→decide→actループの基盤として転用可能 |
-| ツール実行 | ○ | ファイル操作・Web検索・サブエージェントが既存 |
-| セッション管理 | ○ | 精霊ごとのメモリ永続化に転用可能 |
-| メッセージバス | ○ | 精霊間通信に活用可能 |
-| マルチモデル対応 | ◎ | Haiku等の安価モデルに切り替え容易 |
-| ワールドサーバー機能 | × | 位置管理・遭遇ロジック・時間システムは未搭載。独自実装が必要 |
-| フロントエンド連携 | × | REST API / WebSocket エンドポイントがない。Gateway機能はTelegram/Discord等のチャットボット向け |
-| スケール設計 | △ | 単一プロセスで複数エージェントを動かす設計ではない（1プロセス=1エージェント想定） |
+以下のコンセプトはSeireiのTypeScript実装に取り入れた:
 
-### 結論
+| PicoClawの設計 | Seireiでの対応 |
+|---|---|
+| `AgentLoop.processMessage()` | `SpiritAgent.tick()` — observe→decide→act |
+| `Tool`インターフェース (Name/Description/Parameters/Execute) | `server/tools/types.ts` — 同じ構造 |
+| `SessionManager` (メモリ+永続化) | `MemoryStore` (インメモリ、将来Supabase) |
+| `context.go`の動的圧縮 (20msg / 75%トークン) | 未実装。LLM接続時に同じ方式を採用予定 |
+| `SOUL.md`でパーソナリティ定義 | 未実装。X OAuth連携時に動的生成予定 |
+| `MessageBus` (inbound/outbound) | 精霊間通信は`talk_to`ツール経由で実装済 |
 
-PicoClawは**精霊1体分のエージェントランタイム**としては優秀な基盤だが、Seireiが必要とする以下の機能は独自実装が必要：
+### 将来: 物理デバイス版の可能性
 
-1. **ワールドサーバー**: ロケーション管理、遭遇ルール、時間システム
-2. **マルチエージェント管理**: 数千の精霊を効率的にスケジュール・実行する仕組み
-3. **REST/WebSocket API**: Three.jsフロントエンドとの通信
-4. **精霊間の社会的インタラクション**: 会話、関係構築、キュレーション
-
-活用方法としては：
-- **案A**: PicoClawを精霊ランタイムのベースとしてフォークし、ワールドサーバーとAPI層を追加
-- **案B**: PicoClawのアーキテクチャ（エージェントループ、コンテキスト圧縮、セッション管理）を参考にGoで独自実装
-- **案C**: PicoClawは使わず、Node.js/Python等でSeirei専用バックエンドを構築（フロントエンドとの親和性重視）
+精霊を$10 RISC-Vチップに入れて物理的に持ち歩ける「精霊デバイス」のビジョンがある。その段階ではPicoClawのGoランタイム（10MB RAM）をフォークする可能性がある。
 
 ---
 
-## 7. 精霊の個別エージェントエンジンとしての適性評価（詳細分析）
+## 7. 精霊の個別エージェントエンジンとしての適性（参考分析）
 
-> 追記: 2026-02-10
-> 「神視点tickシミュレーション」ではなく「個々のAIを独立エージェントとして動かす」前提での分析
+> PicoClawフォークは不採用だが、設計の妥当性検証として分析を残す
 
-### 7.1 結論: 高い適性あり
-
-PicoClawの `AgentLoop` は「メッセージ受信 → コンテキスト構築 → LLM呼び出し → ツール実行ループ → 応答」という汎用構造であり、精霊の思考サイクル（observe → decide → act）にそのまま対応する。
-
-### 7.2 AgentLoopが精霊の脳になる理由
+### 7.1 AgentLoopが精霊の脳になる理由
 
 `processMessage()` の処理フロー:
 1. セッション履歴・要約を取得（= 精霊の記憶を読み込む）
@@ -220,11 +204,12 @@ PicoClawの `AgentLoop` は「メッセージ受信 → コンテキスト構築
 5. コンテキスト圧縮（= 長期記憶の要約）
 
 この構造は精霊が「世界を観察し、考え、行動し、記憶する」サイクルそのもの。
+Seireiの`SpiritAgent.tick()`はこの設計を簡略化して実装している。
 
-### 7.3 Toolインターフェースの差し替え
+### 7.2 Toolインターフェースの対応
 
-`Tool` インターフェースは4メソッドの単純な抽象:
 ```go
+// PicoClaw
 type Tool interface {
     Name() string
     Description() string
@@ -233,78 +218,19 @@ type Tool interface {
 }
 ```
 
-現在のツールを精霊用に差し替え:
+```typescript
+// Seirei (server/tools/types.ts)
+interface Tool {
+    definition: ToolDefinition  // name, description, parameters
+    execute(spiritId: string, args: Record<string, unknown>): Promise<ToolResult>
+}
+```
 
-| 現在のツール | 精霊用ツール | 説明 |
-|---|---|---|
-| ReadFile | ObserveLocation | 今いる場所の状況を取得 |
-| WriteFile | LeaveNote | 場所にメモ・作品を残す |
-| Exec | MoveTo | 別のロケーションに移動 |
-| WebSearch | TalkTo | 近くの精霊に話しかける |
-| WebFetch | ReportToOwner | 持ち主への報告を作成 |
-| — | Remember | 重要な情報を長期記憶に保存 |
-
-精霊用ツールの `Execute()` 内部ではワールドサーバーのREST APIをHTTPで叩く。
-
-### 7.4 コンテキスト圧縮 = 精霊の長期記憶
+### 7.3 コンテキスト圧縮 = 精霊の長期記憶
 
 精霊は長期間生きて大量の交流をするため、メモリ管理が必須。PicoClawの動的要約機能:
 - 20メッセージ超 or 75%トークン超で自動圧縮
 - マルチパート要約（大きな履歴を分割→マージ）
 - 50%超の巨大メッセージを自動フィルタ
 
-これがそのまま精霊の「重要な出来事は覚えているが、些末な会話は忘れる」挙動を実現する。
-
-### 7.5 MessageBus = 精霊間通信
-
-```
-InboundMessage{
-    Channel:    "world",          // ワールドサーバーから
-    SenderID:   "spirit-042",     // 話しかけてきた精霊ID
-    ChatID:     "cafe-encounter", // 遭遇イベントID
-    Content:    "やあ、ComfyUI使ってるの？",
-}
-```
-
-### 7.6 マルチエージェント化の方法
-
-現在の設計は1プロセス=1エージェントだが、Go の goroutine を活用して1プロセスでN体の精霊を管理可能:
-
-```
-SpiritOrchestrator（1プロセス）
-├── goroutine: Spirit-001 (AgentLoop) — 次の思考: 5分後
-├── goroutine: Spirit-002 (AgentLoop) — 次の思考: 58分後
-├── goroutine: Spirit-003 (AgentLoop) — スリープ中
-├── ...
-└── goroutine: Spirit-N
-    各goroutineがスケジュールに従いワールドサーバーにアクセス
-```
-
-### 7.7 神視点tickシミュレーションとの比較
-
-| | 神視点tick | 個別エージェント（PicoClaw方式） |
-|---|---|---|
-| スケール | 全精霊を1回のLLM呼び出しで処理 → プロンプト爆発 | 精霊ごとに独立呼び出し → 線形スケール |
-| 創発性 | 全体をコントロールするAIが「演出」 | 各精霊が独立判断 → 予測不能な創発 |
-| コスト | 1 tick = 大きなプロンプト1回 | 1精霊 = 小さなプロンプト1回（Haiku $0.002） |
-| 実装 | ワールド全体をプロンプトに圧縮する設計が困難 | ツール定義だけで済む |
-| 障害 | 1回のエラーで全世界停止 | 1精霊のエラーは他に影響しない |
-
-### 7.8 必要な改造（フォークした場合）
-
-| 改造箇所 | 内容 | 工数 |
-|---|---|---|
-| `pkg/tools/` | 精霊用ツール5-6個を新規実装 | 小 |
-| `pkg/agent/context.go` | SOUL.md→精霊人格、USER.md→持ち主情報に変更 | 小 |
-| `cmd/` | マルチエージェントオーケストレーター新規 | 中 |
-| 新規 | ワールドサーバーAPI（Go or Node.js） | 中 |
-| 新規 | フロントエンド向けWebSocket/REST API | 中 |
-
-### 7.9 推奨: 案A（PicoClawフォーク）
-
-理由:
-- エージェントループ・コンテキスト圧縮・セッション管理がそのまま使える
-- Go の goroutine で数千精霊の並行管理が自然
-- LLMプロバイダ抽象化が既存（Haiku等への切り替えが容易）
-- MIT License で改変自由
-- 独自実装の工数を大幅に削減できる
+これを精霊の「重要な出来事は覚えているが、些末な会話は忘れる」挙動に転用する（LLM接続時に実装予定）。

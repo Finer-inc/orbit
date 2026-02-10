@@ -1,6 +1,7 @@
 # Seirei アーキテクチャ設計
 
 > 作成日: 2026-02-10
+> 最終更新: 2026-02-10
 
 ---
 
@@ -37,9 +38,11 @@
 
 視界（Frustum Culling）はGPUやThree.jsを必要としない。精霊の位置・向き・FOVから視錐台を計算し、オブジェクトのバウンディングボックスとの交差を判定するだけ。平面の方程式と内積で計算できる純粋な数学処理。
 
-精霊エージェント用途では以下の簡易版で十分:
-- 半径R以内 かつ 前方180°以内のオブジェクトを返す
-- 距離計算 + 角度計算のみ
+サーバー側の実装（`server/world/vision.ts`）ではGribb/Hartmann法でFrustum6平面を抽出し、AABB交差判定 + NDC投影によるscreenOccupancy計算を行う。フロントエンドのTHREE.js Frustumと同等の結果を返す。
+
+### 開発方針: 面白さは試行錯誤で作る
+
+「面白いか検証してから進む」のではなく、**作りながら面白くしていく**。枠組みを先に作り、その上に会話・人格・社会性を乗せていくイテレーティブなアプローチ。
 
 ---
 
@@ -49,32 +52,32 @@
 
 ```
 ┌──────────────── フロントエンド ─────────────────┐
-│ React 19 + Three.js + React Three Fiber (既存)  │
-│ WebSocketクライアント (追加)                     │
-│ → サーバーから精霊の位置・会話を受信して描画     │
+│ React 19 + Three.js + React Three Fiber (実装済) │
+│ WebSocketクライアント (未実装)                    │
+│ → サーバーから精霊の位置・会話を受信して描画      │
 │                                                  │
 │ Vite 7 / TypeScript                              │
 └──────────────────── ↕ WebSocket ─────────────────┘
 ┌──────────────── バックエンド ───────────────────┐
 │ Node.js + TypeScript                             │
 │                                                  │
-│ ワールドサーバー                                  │
-│ ├── ロケーション管理（座標 + セマンティクス）    │
-│ ├── 視界計算（数学のみ、GPU不要）               │
-│ ├── 遭遇判定（同じ場所の精霊同士）              │
-│ ├── 時間システム（朝昼夕夜サイクル）             │
-│ └── WebSocket + REST API                         │
+│ ワールドサーバー (実装済)                         │
+│ ├── ロケーション管理（座標 + BBox）              │
+│ ├── 視界計算（純粋数学、GPU不要）(実装済)        │
+│ ├── 遭遇判定（距離ベース）(実装済)              │
+│ ├── 時間システム（朝昼夕夜サイクル）(実装済)     │
+│ └── WebSocket + REST API (未実装)                │
 │                                                  │
-│ 精霊エージェント                                  │
-│ ├── 人格プロンプト（Xプロフィールから生成）      │
-│ ├── 思考ループ（setInterval / スケジューラ）     │
-│ ├── ツール実行（observe, move, talk, report）    │
-│ ├── セッション管理（会話履歴 + 要約圧縮）       │
-│ └── LLM呼び出し（Claude Haiku）                 │
+│ 精霊エージェント (枠組み実装済)                   │
+│ ├── 人格プロンプト（Xプロフィールから生成）(未)  │
+│ ├── 思考ループ（setInterval / スケジューラ）(済) │
+│ ├── ツール実行（observe, move, talk, think）(済) │
+│ ├── セッション管理（会話履歴 + 要約圧縮）(未)   │
+│ └── LLM呼び出し（Claude Haiku）(未: スタブ動作中)│
 │                                                  │
-│ 認証: X (Twitter) OAuth                          │
-│ DB:   Supabase                                   │
-│ LLM:  Anthropic API (Claude Haiku)               │
+│ 認証: X (Twitter) OAuth (未実装)                 │
+│ DB:   Supabase (未実装: インメモリストア稼働中)  │
+│ LLM:  Anthropic API (Claude Haiku) (未実装)      │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -115,76 +118,90 @@ Node.jsの非同期I/Oはこの用途に十分適している。
 
 ---
 
-## 4. コンポーネント詳細
+## 4. 実装済みコンポーネント
 
-### 4.1 精霊エージェントの思考ループ
+### 4.1 ワールドサーバー (`server/world/`)
 
-PicoClawの `AgentLoop.processMessage()` の設計思想をTypeScriptで再現:
-
-```
-1. セッション履歴・要約を取得（= 精霊の記憶を読み込む）
-2. コンテキスト構築（= 人格 + 記憶 + 現在の状況を組み立てる）
-3. LLM呼び出し + ツール実行ループ（= 思考して行動する）
-4. セッション保存（= 記憶を永続化する）
-5. コンテキスト圧縮（= 長期記憶の要約、閾値超過時に自動実行）
-```
-
-### 4.2 精霊のツール
-
-LLMがfunction callingで呼び出すツール:
-
-| ツール | 説明 | 叩く先 |
+| ファイル | 役割 | 状態 |
 |---|---|---|
-| `observe` | 今いる場所の状況を取得 | ワールドサーバー |
-| `move_to` | 別のロケーションに移動 | ワールドサーバー |
-| `talk_to` | 近くの精霊に話しかける | ワールドサーバー |
-| `think` | 内省する（記憶に書く） | ローカル（セッション） |
-| `report` | 持ち主に報告を作成 | DB (Supabase) |
-| `remember` | 重要な情報を長期記憶に保存 | DB (Supabase) |
+| `WorldServer.ts` | 中央管理: 精霊登録・移動・observe・遭遇判定 | 実装済 |
+| `WorldClock.ts` | 加速時間システム（timeScale=60, 1実分=1ゲーム時間） | 実装済 |
+| `WorldMap.ts` | ワールド定義 + BBox計算（噴水1, 家2, 木8 = 計11オブジェクト） | 実装済 |
+| `vision.ts` | 純粋数学Frustum Culling + screenOccupancy | 実装済 |
 
-### 4.3 コンテキスト圧縮（PicoClawから学ぶ）
+**ステージデータ**: `WorldMap.ts`と`useWorldState.ts`にそれぞれ配置データがある。現状は手動で変更可能。動的切り替えが必要になった場合にデータ層を分離する。
 
-精霊は長期間生きるため、会話履歴の管理が必須:
+### 4.2 精霊ランタイム (`server/spirit/`)
 
-- **トリガー**: 履歴が20メッセージ超 or トークン推定が75%超
-- **マルチパート要約**: 大きな履歴を分割→個別要約→マージ
-- **巨大メッセージガード**: コンテキストの50%を超えるメッセージは要約対象外
-- **直近保持**: 最新4メッセージは常に保持（連続性のため）
+| ファイル | 役割 | 状態 |
+|---|---|---|
+| `SpiritRuntime.ts` | 複数精霊のスケジューラ（setIntervalベース、エラー隔離） | 実装済 |
+| `SpiritAgent.ts` | 個別精霊: tick() = observe → think → execute | 実装済 |
+| `SpiritThinking.ts` | `ThinkingEngine`インターフェース + ランダムスタブ | 実装済(スタブ) |
 
-### 4.4 ワールドサーバー
+**ThinkingEngineの差し替え設計**: `SpiritThinking.ts`は`ThinkingEngine`インターフェースを定義し、現在は`createStubThinking()`がランダム行動を返す。将来これを`createLLMThinking()`に差し替えるだけでLLM化できる。
 
-精霊のツールがHTTPで叩くAPIサーバー:
+### 4.3 ツールシステム (`server/tools/`)
 
-| エンドポイント | 説明 |
-|---|---|
-| `GET /world/time` | 現在の時間帯（朝昼夕夜） |
-| `GET /world/locations` | ロケーション一覧（名前・座標・タイプ） |
-| `GET /world/location/:id` | 場所の詳細（いる精霊、オブジェクト） |
-| `GET /world/spirits-nearby/:spiritId` | 近くの精霊一覧 |
-| `POST /world/move` | 精霊の移動 |
-| `POST /world/talk` | 精霊同士の会話 |
-| `GET /world/conversation-log/:spiritId` | 直近の会話履歴 |
+| ツール | ファイル | 説明 | 状態 |
+|---|---|---|---|
+| `observe` | `observe.ts` | 視界内オブジェクト + 近くの精霊 + 時間帯 | 実装済 |
+| `move_to` | `moveTo.ts` | オブジェクトIDまたは"x,z"座標で移動 | 実装済 |
+| `talk_to` | `talkTo.ts` | 近くの精霊に話しかけ（距離5以内） | 実装済 |
+| `think` | `think.ts` | 内省をMemoryStoreに記録 | 実装済 |
+| `report` | — | 持ち主への報告作成 | 未実装 |
+| `remember` | — | 長期記憶に保存 | 未実装 |
 
-### 4.5 フロントエンド（既存 + WebSocket追加）
+### 4.4 ストレージ (`server/store/`)
 
+| ファイル | 役割 | 状態 |
+|---|---|---|
+| `MemoryStore.ts` | `WorldStore`インターフェース + インメモリ実装 | 実装済 |
+
+`WorldStore`インターフェースを定義済み。将来Supabase実装に差し替え可能。
+
+### 4.5 CLIログ (`server/cli/`)
+
+| ファイル | 役割 | 状態 |
+|---|---|---|
+| `logger.ts` | ANSIカラー付きCLI出力（アクション別色分け） | 実装済 |
+
+---
+
+## 5. 未実装コンポーネント
+
+### 5.1 LLM思考エンジン
+
+`ThinkingEngine`インターフェースのLLM実装。スタブの`createStubThinking()`を`createLLMThinking()`に差し替える。
+
+```typescript
+// 差し替えイメージ
+const thinking = createLLMThinking({
+  model: 'claude-haiku-4-5-20251001',
+  personality: spiritPersonality,
+  apiKey: process.env.ANTHROPIC_API_KEY,
+})
 ```
-ブラウザ
-├── WebSocket接続
-│   └── サーバーからリアルタイムで受信:
-│       ├── 精霊の位置更新
-│       ├── 会話イベント
-│       └── 時間帯変更
-├── Three.js描画（既存コンポーネント流用）
-│   ├── Ground, Fountain, House, Trees（既存）
-│   ├── SpiritAvatar（追加: 精霊の3D表現）
-│   └── WorldEnvironment（既存: 時間帯で照明変化）
-└── UI（追加）
-    ├── 自分の精霊の情報パネル
-    ├── 会話ログ閲覧
-    └── 朝のレポート画面
-```
 
-### 4.6 データベース (Supabase)
+PicoClawの設計を参考にする要素:
+- コンテキスト圧縮（20メッセージ超 or 75%トークン超で自動要約）
+- マルチパート要約
+- 直近4メッセージの常時保持
+
+### 5.2 WebSocket/REST API
+
+サーバー↔ブラウザのリアルタイム同期。
+
+| 種別 | プロトコル | 用途 |
+|---|---|---|
+| ワールド状態同期 | WebSocket | 精霊位置・会話・時間のリアルタイム配信 |
+| 認証 | REST | X OAuthログイン・セッション管理 |
+| レポート | REST | 朝のレポート取得・既読管理 |
+| 精霊情報 | REST | 自分の精霊の詳細・カスタマイズ |
+
+### 5.3 データベース (Supabase)
+
+`MemoryStore`のインターフェースをSupabase実装に差し替え。
 
 | テーブル | 内容 |
 |---|---|
@@ -196,38 +213,78 @@ LLMがfunction callingで呼び出すツール:
 | `owner_reports` | 持ち主への報告（朝のレポート用） |
 | `locations` | ワールドのロケーション定義 |
 
----
+### 5.4 X OAuth + 人格生成
 
-## 5. API層の整理
+- Xプロフィール+ツイートから精霊の人格プロンプトを自動生成
+- `SOUL.md`相当のプロンプトを動的に構築
 
-### ブラウザ向けAPI (`window.__seirei`)
+### 5.5 フロントエンド追加
 
-ブラウザが描画のためにサーバーから受け取ったデータを操作するAPI。デバッグ・テスト用途も兼ねる。既存ドキュメント: `docs/WORLD_API.md`
-
-### サーバー向けAPI（精霊エージェントが叩くAPI）
-
-精霊の思考ループ内でツールとして呼び出されるワールドサーバーのREST API。本ドキュメントのセクション4.4参照。
-
-### クライアント-サーバー間API
-
-WebSocketでリアルタイム同期 + REST APIでログイン・レポート取得等:
-
-| 種別 | プロトコル | 用途 |
-|---|---|---|
-| ワールド状態同期 | WebSocket | 精霊位置・会話・時間のリアルタイム配信 |
-| 認証 | REST | X OAuthログイン・セッション管理 |
-| レポート | REST | 朝のレポート取得・既読管理 |
-| 精霊情報 | REST | 自分の精霊の詳細・カスタマイズ |
+```
+ブラウザ（追加予定）
+├── WebSocket接続
+│   └── サーバーからリアルタイムで受信:
+│       ├── 精霊の位置更新
+│       ├── 会話イベント
+│       └── 時間帯変更
+├── SpiritAvatar（追加: 精霊の3D表現）
+└── UI
+    ├── 自分の精霊の情報パネル
+    ├── 会話ログ閲覧
+    └── 朝のレポート画面
+```
 
 ---
 
-## 6. 検証の順序
+## 6. 共有型システム
 
-技術スタックの選定とは別に、プロダクトの核心仮説を検証する実験を先に行う:
+フロントエンドとバックエンドは `src/types/world.ts` を共有している。
 
-1. **実験1: 精霊2体の会話** — 人格生成+会話+レポート。面白いか検証。1日
-2. **実験2: ツール駆動の自律行動** — 精霊にツールを与えて自律的に動くか検証
-3. **実験3: 10体同時実行** — スケール・コスト・社会構造の創発を検証
-4. **実装開始** — 実験結果を踏まえてバックエンド構築
+```
+src/types/world.ts
+├── TimeOfDay         — 'morning' | 'day' | 'evening' | 'night'
+├── WorldObjectType   — 'fountain' | 'house' | 'tree'
+├── WorldObjectEntry  — id, type, position, boundingBox
+├── VisibleObject     — id, type, position, distance, screenOccupancy
+├── CharacterState    — position, rotationY (フロントエンド用)
+├── CharacterAPI      — moveTo, rotate等 (フロントエンド用)
+├── VisionAPI         — getVisibleObjects (フロントエンド用)
+├── SpiritState       — id, name, position, rotationY, currentAction, lastThinkAt
+├── NearbySpiritInfo  — id, name, distance, position
+├── ObservationResult — objects, spirits, timeOfDay
+├── ToolDefinition    — name, description, parameters
+├── ToolCall          — name, args
+└── ToolResult        — success, data, message
+```
 
-実験1-3はスクリプトレベルで十分。本格的なサーバー構築は実験の結果を見てから。
+`tsconfig.server.json`の`include: ["server", "src/types"]`でサーバー側から参照。
+
+---
+
+## 7. 実行方法
+
+### サーバー（CLI、精霊の自律行動を確認）
+```bash
+npm run server:start    # 精霊2体が自律行動（3-5秒間隔）
+npm run server:dev      # ファイル変更で自動再起動
+npm run server:check    # 型チェックのみ
+```
+
+### フロントエンド（3Dワールド描画）
+```bash
+npm run dev             # Vite開発サーバー
+```
+
+サーバーとフロントエンドは現時点で独立して動作する（WebSocket未実装のため）。
+
+---
+
+## 8. 次のマイルストーン
+
+| 優先度 | 項目 | 依存 |
+|--------|------|------|
+| ★1 | LLM思考エンジン（スタブ → Anthropic API） | なし |
+| ★2 | WebSocket同期（サーバー精霊 → ブラウザ描画） | なし |
+| ★3 | Supabase永続化（MemoryStore差し替え） | なし |
+| ★4 | X OAuth + 人格生成 | Supabase |
+| ★5 | 朝のレポート機能 | LLM + Supabase |

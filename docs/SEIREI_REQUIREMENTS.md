@@ -377,4 +377,38 @@ Spirit Instances（独立プロセス）
 
 ---
 
+## 14. 実装進捗（2026-02-10時点）
+
+### 完了
+
+| 項目 | 詳細 |
+|---|---|
+| プロジェクト初期化 | React 19 + Three.js + R3F + Vite 7 |
+| 3Dワールド描画 | 噴水、家2棟、木8本、地面、時間帯照明 |
+| サーバー枠組み | Node.js + TypeScript。WorldServer, WorldClock, WorldMap, vision |
+| 精霊ランタイム | SpiritAgent(tick) + SpiritRuntime(スケジューラ) + スタブ思考 |
+| ツールシステム | observe, move_to, talk_to, think |
+| CLI動作確認 | 精霊2体(Hikari, Kaze)がCLIで自律行動 |
+| 技術スタック決定 | TypeScript統一（PicoClawフォーク不採用） |
+| ドキュメント整備 | ARCHITECTURE.md, WORLD_API.md, PICOCLAW_RESEARCH.md |
+
+### 次のマイルストーン
+
+| 優先度 | 項目 |
+|--------|------|
+| ★1 | LLM思考エンジン（スタブ → Anthropic API） |
+| ★2 | WebSocket同期（サーバー精霊 → ブラウザ描画） |
+| ★3 | Supabase永続化（MemoryStore差し替え） |
+| ★4 | X OAuth + 人格生成 |
+| ★5 | 朝のレポート機能 |
+
+### 方針メモ
+
+- 面白さの検証フェーズは設けない。**作りながら面白くする**（試行錯誤アプローチ）
+- ステージデータは現状ハードコードだが変更可能。動的切り替えは必要になった時点で対応
+
+詳細は `ARCHITECTURE.md` を参照。
+
+---
+
 *このドキュメントは、claude.ai上での約3時間のプロダクト構想セッションの内容をまとめたものです。*
