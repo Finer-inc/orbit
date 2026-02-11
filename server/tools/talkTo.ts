@@ -45,7 +45,7 @@ export function createTalkToTool(world: WorldServer, store: WorldStore): Tool {
       }
 
       // Check if the target spirit is nearby
-      const nearbySpirits = world.getNearbySpirits(spiritId, TALK_RANGE)
+      const nearbySpirits = world.getVisibleSpirits(spiritId, TALK_RANGE)
       const target = nearbySpirits.find((s) => s.id === targetSpiritId)
 
       if (!target) {

@@ -10,13 +10,17 @@ import {
 
 export function useWorldObjectRegistration(worldState: WorldState): void {
   useEffect(() => {
-    // 噴水（固定位置 [0,0,0]）
-    const fountainPos: [number, number, number] = [0, 0, 0]
-    registerWorldObject({
-      id: 'fountain-0',
-      type: 'fountain',
-      position: fountainPos,
-      boundingBox: computeFountainBBox(fountainPos),
+    // 噴水（4広場）
+    const fountainPositions: [number, number, number][] = [
+      [0, 0, 0], [18, 0, 0], [0, 0, 18], [18, 0, 18],
+    ]
+    fountainPositions.forEach((pos, i) => {
+      registerWorldObject({
+        id: `fountain-${i}`,
+        type: 'fountain',
+        position: pos,
+        boundingBox: computeFountainBBox(pos),
+      })
     })
 
     // 家

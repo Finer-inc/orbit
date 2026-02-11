@@ -385,27 +385,60 @@ Spirit Instances（独立プロセス）
 |---|---|
 | プロジェクト初期化 | React 19 + Three.js + R3F + Vite 7 |
 | 3Dワールド描画 | 噴水、家2棟、木8本、地面、時間帯照明 |
-| サーバー枠組み | Node.js + TypeScript。WorldServer, WorldClock, WorldMap, vision |
-| 精霊ランタイム | SpiritAgent(tick) + SpiritRuntime(スケジューラ) + スタブ思考 |
-| ツールシステム | observe, move_to, talk_to, think |
+| サーバー枠組み (TS) | Node.js + TypeScript。WorldServer, WorldClock, WorldMap, vision |
+| 精霊ランタイム (TS) | SpiritAgent(tick) + SpiritRuntime(スケジューラ) + スタブ思考 |
+| ツールシステム (TS) | observe, move_to, talk_to, think |
 | CLI動作確認 | 精霊2体(Hikari, Kaze)がCLIで自律行動 |
-| 技術スタック決定 | TypeScript統一（PicoClawフォーク不採用） |
+| 技術スタック決定 | **PicoClawフォーク (Go) + TSフロントエンド** |
 | ドキュメント整備 | ARCHITECTURE.md, WORLD_API.md, PICOCLAW_RESEARCH.md |
+| PicoClaw clone & build | Go 1.25.7, picoclaw/ にclone済み、ビルド成功 |
+| TS World Server HTTP API | server/api.ts (Hono) で WorldServer を REST API 化 |
+| Go精霊モジュール | spirits/ — worldclient, spirittools, anthropic provider |
+| 精霊の視界取得 (Go→TS→LLM) | Go精霊がTS World Serverからobserve → Haiku が日本語で応答 |
+| move_toツール実装 (Go) | observe→move_to→observe の3ステップをLLMが自律実行。距離4.7→1.5に接近を確認 |
+| 自律ループ (PicoClaw AgentLoop) | PicoClawを改造（NewCustomLoop追加）して自律ループ実現。15秒間隔で3tick連続動作確認。セッション永続化・文脈圧縮が動作 |
+| sayツール + 空間ブロードキャスト (Go+TS) | talk_toからsay（空間ブロードキャスト）に設計変更。距離ベースで声が届く仕組み（whisper: 1.5m, normal: 5.0m, shout: 15.0m）。宛先意図（to）と配信範囲を分離し、割り込み・盗み聞き等の創発的行動が可能 |
+| 複数精霊の並行自律行動 | 2体(Hikari, Kaze)をgoroutineで並行実行。5秒スタガーで開始。精霊同士が出会い・会話が成立 |
+| フロントエンド表示（あつ森風） | OrbitControls削除、固定角度俯瞰カメラ（offset [12,16,12]、lerp追従）。精霊をポーリング（2秒間隔）で取得し複数Character描画 |
+| 名前ラベル + 吹き出し | @react-three/drei Html で精霊頭上に名前表示。lastSpeech が10秒以内なら吹き出し表示 |
+| 精霊の服色 + モック人格 | SpiritState に color/lastSpeech/lastSpeechAt 追加。Hikari (#e8b88a, イラストレーター) と Kaze (#7eb8c9, プログラマー) にX風人格設定 |
+| walk_to ツール | 座標指定で任意の場所に歩ける移動ツール。1.5m手前で自動停止。observeで精霊座標を表示するよう改善 |
+| 時間帯サーバー同期 | useWorldState でサーバーから30秒ポーリングで timeOfDay を取得 |
+| Viteプロキシ設定 | vite.config.ts で /api → localhost:3001 にプロキシ。CORS問題を解決 |
+| 精霊検知を視野ベースに変更 | observe()の精霊検知を360度距離ベースからFOV 90°視野ベースに変更。背後の精霊は検知不可。声は全方位 |
+| look_atツール | 移動せずに向きを変えるツール。サーバーAPI + Goツール。会話前に相手の方を向く行動が可能に |
 
-### 次のマイルストーン
+### 技術スタック変更
 
-| 優先度 | 項目 |
-|--------|------|
-| ★1 | LLM思考エンジン（スタブ → Anthropic API） |
-| ★2 | WebSocket同期（サーバー精霊 → ブラウザ描画） |
-| ★3 | Supabase永続化（MemoryStore差し替え） |
-| ★4 | X OAuth + 人格生成 |
-| ★5 | 朝のレポート機能 |
+当初TypeScript統一を選択していたが、**PicoClawフォーク (Go)** に変更。
+
+理由: エージェントループ・コンテキスト圧縮・セッション管理を自前で書くのはPicoClawの再発明。1000体のgoroutine並行もGoが自然。既存TSフレームワーク（Vercel AI SDK等）は1000体の自律エージェントを想定していない。
+
+TS実装（`server/`）はプロトタイプ/参考実装として残す。
+
+### マイルストーン
+
+| 優先度 | 項目 | 状態 |
+|--------|------|------|
+| ★1 | PicoClaw動作確認 | **完了** |
+| ★2 | コード読解・改造ポイント特定 | **完了** |
+| ★3 | 精霊用ツール実装 (Go) | observe, move_to, walk_to, look_at, say完了。think未着手 |
+| ★3.5 | 自律ループ + 複数精霊 + 会話 | **完了** (2体goroutine並行 + メッセージキュー + ProcessDirect) |
+| ★4 | ワールドサーバー HTTP API | **完了** (TSのまま、Go移植不要) |
+| ★5 | フロントエンド表示 | **完了** (あつ森カメラ + ポーリング + 精霊描画 + ラベル/吹き出し) |
+| ★6 | Supabase永続化 | 未着手 |
+| ★7 | X OAuth + 人格生成 | 未着手 |
 
 ### 方針メモ
 
 - 面白さの検証フェーズは設けない。**作りながら面白くする**（試行錯誤アプローチ）
 - ステージデータは現状ハードコードだが変更可能。動的切り替えは必要になった時点で対応
+- ワールドサーバーはTypeScriptのまま。Go移植は不要（1000体@5分間隔 = ~3.3 req/sec、HTTP localhostで十分）
+- PicoClawを最小限改造（2ファイル）してAgentLoop・SessionManager・文脈圧縮をそのまま利用。`NewCustomLoop()`で外部ツール・システムプロンプトを注入
+- Anthropic APIはPicoClawのHTTPProvider（OpenAI互換のみ）では使えないため、独自AnthropicProviderを実装
+- 精霊の検知は視野（FOV 90°）ベース。背後の精霊は見えない。声だけは全方位で聞こえる。look_atツールで向きを変えてからobserveする運用
+- コミュニケーションは**空間ブロードキャスト方式（say）**を採用。talk_to（宛先指定ダイレクトメッセージ）から変更。volumeで到達距離を制御（whisper: 1.5m, normal: 5.0m, shout: 15.0m）、toで宛先意図を示すが配信範囲には影響しない。割り込み・盗み聞き等の創発的行動が可能
+- フロントエンドはWebSocketではなくREST APIポーリング（2秒間隔）で精霊位置を取得。精霊の思考間隔が15秒なので十分な更新頻度
 
 詳細は `ARCHITECTURE.md` を参照。
 

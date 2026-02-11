@@ -13,8 +13,10 @@
     "server:check": "tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.9",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "hono": "^4.11.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "three": "^0.182.0"

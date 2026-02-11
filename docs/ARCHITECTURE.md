@@ -23,268 +23,267 @@
 
 精霊はユーザーがブラウザを閉じていても自律的に動く。したがって精霊のロジックはサーバー側で動き、ブラウザは描画に専念する。
 
-```
-サーバー                          ブラウザ
-────────                        ────────
-精霊の脳（思考ループ）            Three.jsで描画
-ワールド状態管理                  サーバーから状態を受信
-視界計算（数学のみ）              ユーザーが見る画面
-会話・記憶・遭遇判定              window.__seirei で操作（デバッグ用）
-
-        ←── WebSocket/REST ──→
-```
-
 ### 視界はブラウザ不要
 
-視界（Frustum Culling）はGPUやThree.jsを必要としない。精霊の位置・向き・FOVから視錐台を計算し、オブジェクトのバウンディングボックスとの交差を判定するだけ。平面の方程式と内積で計算できる純粋な数学処理。
-
-サーバー側の実装（`server/world/vision.ts`）ではGribb/Hartmann法でFrustum6平面を抽出し、AABB交差判定 + NDC投影によるscreenOccupancy計算を行う。フロントエンドのTHREE.js Frustumと同等の結果を返す。
+視界（Frustum Culling）はGPUやThree.jsを必要としない純粋な数学処理。Gribb/Hartmann法でFrustum6平面を抽出し、AABB交差判定 + NDC投影によるscreenOccupancy計算を行う。
 
 ### 開発方針: 面白さは試行錯誤で作る
 
-「面白いか検証してから進む」のではなく、**作りながら面白くしていく**。枠組みを先に作り、その上に会話・人格・社会性を乗せていくイテレーティブなアプローチ。
+「面白いか検証してから進む」のではなく、**作りながら面白くしていく**。
 
 ---
 
 ## 2. 技術スタック
 
-### 採用: TypeScript統一（案A）
+### 採用: PicoClawフォーク (Go) + TypeScriptフロントエンド
 
 ```
 ┌──────────────── フロントエンド ─────────────────┐
 │ React 19 + Three.js + React Three Fiber (実装済) │
-│ WebSocketクライアント (未実装)                    │
-│ → サーバーから精霊の位置・会話を受信して描画      │
+│ ポーリング（2秒間隔で精霊位置取得、30秒間隔で時間帯取得）│
 │                                                  │
 │ Vite 7 / TypeScript                              │
-└──────────────────── ↕ WebSocket ─────────────────┘
-┌──────────────── バックエンド ───────────────────┐
-│ Node.js + TypeScript                             │
-│                                                  │
-│ ワールドサーバー (実装済)                         │
+└──────────────────── ↕ WebSocket/REST ────────────┘
+┌──────── ワールドサーバー (TypeScript) ──────────┐
+│ server/api.ts — Hono HTTP API (port 3001)        │
 │ ├── ロケーション管理（座標 + BBox）              │
-│ ├── 視界計算（純粋数学、GPU不要）(実装済)        │
-│ ├── 遭遇判定（距離ベース）(実装済)              │
-│ ├── 時間システム（朝昼夕夜サイクル）(実装済)     │
-│ └── WebSocket + REST API (未実装)                │
+│ ├── 視界計算（純粋数学、GPU不要）                │
+│ ├── 遭遇判定（距離ベース）                       │
+│ ├── 時間システム（朝昼夕夜サイクル）             │
+│ └── REST API（Viteプロキシ /api → localhost:3001）│
 │                                                  │
-│ 精霊エージェント (枠組み実装済)                   │
-│ ├── 人格プロンプト（Xプロフィールから生成）(未)  │
-│ ├── 思考ループ（setInterval / スケジューラ）(済) │
-│ ├── ツール実行（observe, move, talk, think）(済) │
-│ ├── セッション管理（会話履歴 + 要約圧縮）(未)   │
-│ └── LLM呼び出し（Claude Haiku）(未: スタブ動作中)│
+│ 認証: X (Twitter) OAuth                          │
+│ DB:   Supabase                                   │
+└──────────────── ↕ HTTP localhost ────────────────┘
+┌──────── 精霊エージェント (Go: spirits/) ────────┐
+│ PicoClawフォーク改造 + コンポーネント利用        │
 │                                                  │
-│ 認証: X (Twitter) OAuth (未実装)                 │
-│ DB:   Supabase (未実装: インメモリストア稼働中)  │
-│ LLM:  Anthropic API (Claude Haiku) (未実装)      │
+│ ├── AgentLoop (NewCustomLoop で精霊用に改造)     │
+│ │   セッション永続化・文脈圧縮・ツール実行ループ │
+│ ├── AnthropicProvider (カスタム実装)             │
+│ │   ※ PicoClawのHTTPProviderはOpenAI形式のみ    │
+│ │     Anthropic native APIには非対応のため自作   │
+│ ├── ツール: observe, move_to, walk_to, look_at, say (think等は未実装) │
+│ └── オーケストレーター: 未実装（goroutine×1000） │
+│                                                  │
+│ LLM:  Anthropic API (Claude Haiku)               │
 └──────────────────────────────────────────────────┘
 ```
 
-### 選定理由
+### 空間コミュニケーションモデル
 
-| 判断基準 | TypeScript統一 | Go (PicoClawフォーク) |
-|---|---|---|
-| 1人で開発 | ◎ 1言語で完結 | △ Go + TS の2言語 |
-| MVP速度 | ◎ | ○ |
-| 精霊100体 | ◎ 余裕 | ◎ 余裕 |
-| 精霊10,000体 | △ 工夫必要 | ◎ goroutineで自然 |
-| PicoClaw流用 | × 設計思想のみ参考 | ◎ フォーク可能 |
-| Supabase連携 | ◎ 公式SDK充実 | △ SDK弱い |
-| 型共有 | ◎ フロント・バック共通 | × OpenAPI等で橋渡し必要 |
+精霊の発話は**空間ブロードキャスト**方式。話しかける相手の意図（`to`）と、声の届く範囲（`volume`）を分離する。
 
-**10,000体が必要になるのはプロダクト成功後**。1人で最速デモを出すことが最優先。Goへの移行はトラクション証明後で十分。
+| volume | 到達距離 | 用途 |
+|--------|---------|------|
+| whisper | 1.5m | ささやき、秘密の話 |
+| normal | 5.0m | 通常の会話 |
+| shout | 15.0m | 呼びかけ、叫び |
 
-### Node.jsで1000体は動くのか
+**配信ルール**: 発話位置から到達距離内の全精霊にメッセージが届く（`to`の有無に関わらず）
 
-精霊の思考処理は**LLM API呼び出し待ち**が99%。CPU処理はほぼゼロ。
-
-- 1000体 × 1回/時（無料） = 17回/分のAPI呼び出し
-- 100体 × 12回/時（有料5分間隔） = 20回/分のAPI呼び出し
-- `Promise.all` + `setTimeout` で十分処理可能
-
-Node.jsの非同期I/Oはこの用途に十分適している。
-
----
-
-## 3. Go移行の判断基準（将来）
-
-以下の条件を満たしたとき、Go（PicoClawフォーク）への移行を検討:
-
-- 同時アクティブ精霊が5,000体を超えた
-- Node.jsプロセスのメモリが8GBを超えた
-- 思考頻度を1分以下に下げる要件が出た
-- 物理デバイス版（$10 RISC-Vチップに精霊を入れる）を実装する段階
-
----
-
-## 4. 実装済みコンポーネント
-
-### 4.1 ワールドサーバー (`server/world/`)
-
-| ファイル | 役割 | 状態 |
-|---|---|---|
-| `WorldServer.ts` | 中央管理: 精霊登録・移動・observe・遭遇判定 | 実装済 |
-| `WorldClock.ts` | 加速時間システム（timeScale=60, 1実分=1ゲーム時間） | 実装済 |
-| `WorldMap.ts` | ワールド定義 + BBox計算（噴水1, 家2, 木8 = 計11オブジェクト） | 実装済 |
-| `vision.ts` | 純粋数学Frustum Culling + screenOccupancy | 実装済 |
-
-**ステージデータ**: `WorldMap.ts`と`useWorldState.ts`にそれぞれ配置データがある。現状は手動で変更可能。動的切り替えが必要になった場合にデータ層を分離する。
-
-### 4.2 精霊ランタイム (`server/spirit/`)
-
-| ファイル | 役割 | 状態 |
-|---|---|---|
-| `SpiritRuntime.ts` | 複数精霊のスケジューラ（setIntervalベース、エラー隔離） | 実装済 |
-| `SpiritAgent.ts` | 個別精霊: tick() = observe → think → execute | 実装済 |
-| `SpiritThinking.ts` | `ThinkingEngine`インターフェース + ランダムスタブ | 実装済(スタブ) |
-
-**ThinkingEngineの差し替え設計**: `SpiritThinking.ts`は`ThinkingEngine`インターフェースを定義し、現在は`createStubThinking()`がランダム行動を返す。将来これを`createLLMThinking()`に差し替えるだけでLLM化できる。
-
-### 4.3 ツールシステム (`server/tools/`)
-
-| ツール | ファイル | 説明 | 状態 |
-|---|---|---|---|
-| `observe` | `observe.ts` | 視界内オブジェクト + 近くの精霊 + 時間帯 | 実装済 |
-| `move_to` | `moveTo.ts` | オブジェクトIDまたは"x,z"座標で移動 | 実装済 |
-| `talk_to` | `talkTo.ts` | 近くの精霊に話しかけ（距離5以内） | 実装済 |
-| `think` | `think.ts` | 内省をMemoryStoreに記録 | 実装済 |
-| `report` | — | 持ち主への報告作成 | 未実装 |
-| `remember` | — | 長期記憶に保存 | 未実装 |
-
-### 4.4 ストレージ (`server/store/`)
-
-| ファイル | 役割 | 状態 |
-|---|---|---|
-| `MemoryStore.ts` | `WorldStore`インターフェース + インメモリ実装 | 実装済 |
-
-`WorldStore`インターフェースを定義済み。将来Supabase実装に差し替え可能。
-
-### 4.5 CLIログ (`server/cli/`)
-
-| ファイル | 役割 | 状態 |
-|---|---|---|
-| `logger.ts` | ANSIカラー付きCLI出力（アクション別色分け） | 実装済 |
-
----
-
-## 5. 未実装コンポーネント
-
-### 5.1 LLM思考エンジン
-
-`ThinkingEngine`インターフェースのLLM実装。スタブの`createStubThinking()`を`createLLMThinking()`に差し替える。
-
-```typescript
-// 差し替えイメージ
-const thinking = createLLMThinking({
-  model: 'claude-haiku-4-5-20251001',
-  personality: spiritPersonality,
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+**受信時の表示例**:
+```
+届いた声:
+  - Hikari（あなたに向かって）:「こんにちは！」(距離2.3)
+  - Hikari（Kazeに向かって）:「あの木きれいだね」(距離4.8)
+  - Kaze（独り言）:「噴水の音が心地いい…」(距離3.1)
 ```
 
-PicoClawの設計を参考にする要素:
-- コンテキスト圧縮（20メッセージ超 or 75%トークン超で自動要約）
-- マルチパート要約
-- 直近4メッセージの常時保持
+この設計により以下の創発的行動が可能:
+- **会話への割り込み**: 他の精霊宛の発言を聞いて返事する
+- **盗み聞き**: 範囲内なら自分宛でなくても聞こえる
+- **ささやき**: whisperで近くの精霊だけに秘密を伝える
+- **呼びかけ**: shoutで遠くの精霊を呼ぶ
 
-### 5.2 WebSocket/REST API
+### 方針転換の経緯
 
-サーバー↔ブラウザのリアルタイム同期。
+当初はTypeScript統一を選択していたが、以下の理由でPicoClawフォークに変更:
 
-| 種別 | プロトコル | 用途 |
+| 観点 | TypeScript自前 | PicoClawフォーク (Go) |
 |---|---|---|
-| ワールド状態同期 | WebSocket | 精霊位置・会話・時間のリアルタイム配信 |
-| 認証 | REST | X OAuthログイン・セッション管理 |
-| レポート | REST | 朝のレポート取得・既読管理 |
-| 精霊情報 | REST | 自分の精霊の詳細・カスタマイズ |
+| エージェントの核（ループ・圧縮・セッション） | **全部書く必要あり** | **既に実装済み** |
+| 1000体並行 | async/awaitで頑張る | goroutineで自然 |
+| 追加実装量 | 多い | ツール差し替え + オーケストレーター |
+| 言語 | 1つ | 2つ（Go + TS） |
 
-### 5.3 データベース (Supabase)
+**決め手**: 「Anthropic APIを直接叩く」と言った時点で、エージェントループ・コンテキスト圧縮・セッション管理を全部自前で書くことになり、それはPicoClawの再発明に等しい。既存フレームワーク（Vercel AI SDK、Mastra等）も「1000体の自律エージェント」を想定していないため代替にならない。PicoClawをフォークして改造するのが最も工数が少ない。
 
-`MemoryStore`のインターフェースをSupabase実装に差し替え。
+サーバーとフロントエンドはWebSocket/RESTで繋ぐだけなので、型共有の恩恵は薄く、2言語のデメリットは小さい。
 
-| テーブル | 内容 |
-|---|---|
-| `users` | ユーザー情報（X OAuth連携） |
-| `spirits` | 精霊の基本情報（名前・人格・持ち主） |
-| `spirit_memories` | 長期記憶（key-value + タイムスタンプ） |
-| `spirit_sessions` | 会話履歴 + 要約 |
-| `conversations` | 精霊間の会話ログ |
-| `owner_reports` | 持ち主への報告（朝のレポート用） |
-| `locations` | ワールドのロケーション定義 |
+### PicoClawが提供するもの（自前で書かなくて済む部分）
 
-### 5.4 X OAuth + 人格生成
+| 機能 | PicoClawの実装 | 自前で書いた場合の工数 |
+|---|---|---|
+| エージェントループ | `pkg/agent/loop.go` | ~100行だが堅牢にするのが大変 |
+| コンテキスト圧縮 | `pkg/agent/context.go` | ~300行。マルチパート要約、トークン管理 |
+| セッション管理 | `pkg/session/manager.go` | ~200行。永続化・復元・刈り込み |
+| ツールフレームワーク | `pkg/tools/registry.go` | ~100行 |
+| マルチLLMプロバイダ | `pkg/providers/` | ~500行。8プロバイダ対応 |
+| サブエージェント | `pkg/tools/subagent.go` | ~200行 |
 
-- Xプロフィール+ツイートから精霊の人格プロンプトを自動生成
-- `SOUL.md`相当のプロンプトを動的に構築
+### 1000体を1プロセスで動かす
 
-### 5.5 フロントエンド追加
+Go の goroutine は1個あたり ~2KB。1000 goroutine = ~2MB の追加メモリ。
 
 ```
-ブラウザ（追加予定）
-├── WebSocket接続
-│   └── サーバーからリアルタイムで受信:
-│       ├── 精霊の位置更新
-│       ├── 会話イベント
-│       └── 時間帯変更
-├── SpiritAvatar（追加: 精霊の3D表現）
-└── UI
-    ├── 自分の精霊の情報パネル
-    ├── 会話ログ閲覧
-    └── 朝のレポート画面
+SpiritOrchestrator（1 Goプロセス）
+├── goroutine: Spirit-001 (AgentLoop) — 次の思考: 5分後
+├── goroutine: Spirit-002 (AgentLoop) — 次の思考: 58分後
+├── goroutine: Spirit-003 (AgentLoop) — スリープ中
+├── ...
+└── goroutine: Spirit-1000
+    各goroutineがスケジュールに従いワールドサーバーにアクセス
+```
+
+精霊の思考処理は**LLM API呼び出し待ち**が99%。CPU処理はほぼゼロ。goroutineはI/O待ちで自然にyieldするため、1000体でもCPU負荷は極小。
+
+---
+
+## 3. PicoClawフォークの改造方針
+
+PicoClawのAgentLoopを**最小限の改造で精霊用に流用**する。
+
+問題: AgentLoopのツールレジストリはprivateフィールドであり、`NewAgentLoop()`が内部でReadFile・WriteFile等をハードコード登録する。また`ContextBuilder`のシステムプロンプトもPicoClaw固有。
+
+解決: 2ファイルに最小限の変更を加え、`NewCustomLoop()`コンストラクタを追加:
+- `pkg/agent/loop.go` — `CustomLoopConfig`構造体 + `NewCustomLoop()`: 外部ToolRegistry・SystemPrompt・LLMProviderを受け取る
+- `pkg/agent/context.go` — `customSystemPrompt`フィールド追加: 設定されていればPicoClaw固有プロンプトをスキップ
+
+これにより、PicoClawの以下の機能がそのまま使える:
+- **AgentLoop.processMessage()** — ツール実行ループ（LLM→tool_use→実行→結果→LLM）
+- **SessionManager** — 会話履歴のJSON永続化・復元・トランケーション
+- **summarizeSession()** — 20メッセージ or 75%トークン超過で自動要約・圧縮
+- **ProcessDirect()** — 外部からメッセージを注入してprocessMessageを実行
+
+### 3.1 精霊用ツールに差し替え
+
+PicoClawの既存ツール（ファイル操作、シェル、Web検索等）を精霊用ツールに差し替え:
+
+| PicoClawのツール | 精霊用ツール | 説明 |
+|---|---|---|
+| ReadFile | `observe` | 今いる場所の状況を取得 |
+| Exec | `move_to` | 別のロケーションに移動 |
+| — | `walk_to` | 任意の座標に歩いて移動（精霊に近づく） |
+| — | `look_at` | 移動せずに指定方向を向く |
+| WebSearch | `say` | 声を出す（空間ブロードキャスト、距離ベースで届く） |
+| — | `think` | 内省する（記憶に書く） |
+| WebFetch | `report` | 持ち主への報告を作成 |
+| WriteFile | `remember` | 重要な情報を長期記憶に保存 |
+
+### 3.2 オーケストレーター新規実装
+
+1プロセスでN体の精霊を管理するgoroutineベースのスケジューラ。
+
+### 3.3 ワールドサーバー（確定: TypeScript維持）
+
+ワールド状態管理（位置、視界、遭遇、時間）は **既存のTypeScript実装（server/api.ts + server/world/）をそのまま本番利用** する。Go精霊エージェントからはHTTP localhostで呼び出す。
+
+Go移植しない理由:
+- 1000精霊 × 5分間隔 = **~3.3 req/sec、同時接続~10**。HTTP localhostはこの負荷を余裕で処理できる
+- ワールドサーバーのロジック（視界計算、WorldMap、WorldClock等）は既にTypeScriptで完成・テスト済み
+- Go移植は工数に見合わない（ワールドロジックの再実装 + テスト + バグ修正）
+
+### 3.4 WebSocket/REST API
+
+フロントエンド向けのリアルタイム配信。
+
+### 3.5 人格システム
+
+PicoClawの`SOUL.md`/`IDENTITY.md`をXプロフィールから動的生成。
+
+### 3.6 実装済みコンポーネント (spirits/)
+
+```
+spirits/                            ← Go module
+├── cmd/main.go                     ← エントリポイント (2体並行goroutine × ProcessDirect × time.Ticker)
+├── worldclient/client.go           ← TS World Server用HTTPクライアント (Register, Observe, Move, Say, LookAt, GetSpirit, GetObject)
+├── spirittools/
+│   ├── observe.go                  ← 観察ツール (精霊座標表示 + 未読メッセージ受信)
+│   ├── move_to.go                  ← 移動ツール (オブジェクトID→座標解決→移動)
+│   ├── walk_to.go                  ← 座標移動ツール (任意座標へ移動、1.5m手前停止)
+│   ├── look_at.go                  ← 向き変更ツール (移動せずに指定方向を向く)
+│   └── say.go                      ← 発話ツール (空間ブロードキャスト、距離ベースで届く)
+├── anthropic/provider.go           ← Anthropic native API プロバイダ (PicoClaw LLMProvider interface)
+├── sessions/                       ← PicoClaw SessionManagerによる自動永続化 (gitignored)
+├── go.mod                          ← picoclaw/ を replace directive で参照
+└── .env                            ← ANTHROPIC_API_KEY (gitignored)
+```
+
+PicoClaw改造箇所 (picoclaw/):
+```
+picoclaw/pkg/agent/loop.go         ← NewCustomLoop() 追加 (外部ツール・プロンプト注入)
+picoclaw/pkg/agent/context.go      ← customSystemPrompt フィールド追加
 ```
 
 ---
 
-## 6. 共有型システム
+## 4. 既存実装の位置づけ
 
-フロントエンドとバックエンドは `src/types/world.ts` を共有している。
+### TypeScript実装（server/）の扱い
 
-```
-src/types/world.ts
-├── TimeOfDay         — 'morning' | 'day' | 'evening' | 'night'
-├── WorldObjectType   — 'fountain' | 'house' | 'tree'
-├── WorldObjectEntry  — id, type, position, boundingBox
-├── VisibleObject     — id, type, position, distance, screenOccupancy
-├── CharacterState    — position, rotationY (フロントエンド用)
-├── CharacterAPI      — moveTo, rotate等 (フロントエンド用)
-├── VisionAPI         — getVisibleObjects (フロントエンド用)
-├── SpiritState       — id, name, position, rotationY, currentAction, lastThinkAt
-├── NearbySpiritInfo  — id, name, distance, position
-├── ObservationResult — objects, spirits, timeOfDay
-├── ToolDefinition    — name, description, parameters
-├── ToolCall          — name, args
-└── ToolResult        — success, data, message
-```
+`server/`のTypeScript実装は用途に応じて **本番コード** と **参考実装** に分かれる。
 
-`tsconfig.server.json`の`include: ["server", "src/types"]`でサーバー側から参照。
+#### 本番コード（そのまま使用）
+- **server/api.ts** — Hono HTTP API。ワールドサーバーのエンドポイント。Go精霊エージェントからHTTPで呼び出される
+- **server/world/WorldServer.ts** — ワールド状態管理の中核
+- **server/world/vision.ts** — 視界計算（Frustum Culling、screenOccupancy）
+- **server/world/WorldMap.ts** — マップ・ロケーション管理
+- **server/world/WorldClock.ts** — ゲーム内時間システム
+
+#### 参考実装（Goで再実装済み or 再実装予定）
+- **server/spirit/SpiritRuntime.ts** — 精霊ランタイム。Go spirits/cmd/main.go に相当
+- **server/spirit/SpiritAgent.ts** — エージェントループ。Go側でPicoClaw AgentLoop (NewCustomLoop) に置き換え
+- **server/tools/** — TSツール定義。Go spirittools/ の参考として使用済み
+
+### フロントエンド（src/）
+
+変更なし。React 19 + Three.js + R3F。WebSocket接続先はTSワールドサーバーのまま。
+
+### 共有型
+
+フロントエンド ↔ ワールドサーバー間はTypeScript同士なので型共有が可能。Go精霊エージェント ↔ ワールドサーバー間はHTTP JSON構造で合わせる。
 
 ---
 
-## 7. 実行方法
+## 5. 実行方法
 
-### サーバー（CLI、精霊の自律行動を確認）
+### フロントエンド（3Dワールド描画）
 ```bash
-npm run server:start    # 精霊2体が自律行動（3-5秒間隔）
+npm run dev             # Vite開発サーバー (プロキシ: /api → localhost:3001)
+```
+
+### TSワールドサーバー（本番）
+```bash
+npx tsx server/api.ts   # Hono HTTP API (port 3001)
+```
+
+### TSプロトタイプサーバー（参考用）
+```bash
+npm run server:start    # 精霊2体がスタブ思考で自律行動（参考実装）
 npm run server:dev      # ファイル変更で自動再起動
 npm run server:check    # 型チェックのみ
 ```
 
-### フロントエンド（3Dワールド描画）
+### Go精霊エージェント
 ```bash
-npm run dev             # Vite開発サーバー
+cd spirits && ./seirei-spirit   # .envからANTHROPIC_API_KEYを読み込み
+# またはビルドして実行:
+cd spirits && go build -o seirei-spirit ./cmd && ./seirei-spirit
 ```
-
-サーバーとフロントエンドは現時点で独立して動作する（WebSocket未実装のため）。
 
 ---
 
-## 8. 次のマイルストーン
+## 6. マイルストーン
 
-| 優先度 | 項目 | 依存 |
-|--------|------|------|
-| ★1 | LLM思考エンジン（スタブ → Anthropic API） | なし |
-| ★2 | WebSocket同期（サーバー精霊 → ブラウザ描画） | なし |
-| ★3 | Supabase永続化（MemoryStore差し替え） | なし |
-| ★4 | X OAuth + 人格生成 | Supabase |
-| ★5 | 朝のレポート機能 | LLM + Supabase |
+| 優先度 | 項目 | 状態 | 内容 |
+|--------|------|------|------|
+| ★1 | PicoClaw動作確認 | **完了** | clone、ビルド成功 (Go 1.25.7) |
+| ★2 | コード読解・改造ポイント特定 | **完了** | AgentLoop: privateフィールド問題 → NewCustomLoop追加で解決。HTTPProvider: OpenAI形式のみ → カスタムAnthropicProvider自作 |
+| ★3 | 精霊用ツール実装 (Go) | **一部完了** | observe, move_to, walk_to, look_at, say: 完了。think: 未着手 |
+| ★3.5 | 自律ループ + 複数精霊 | **完了** | 2体(Hikari, Kaze)がgoroutineで並行自律行動。精霊同士の会話が成立 |
+| ★4 | ワールドサーバー | **HTTP API完了** | TS維持確定 (Hono)。Go精霊からHTTP localhostで呼び出し |
+| ★5 | フロントエンド表示 | **完了** | あつ森風カメラ + ポーリング + 精霊描画 + 名前/吹き出し |
+| ★5.5 | モック人格 | **完了** | 精霊ごとにX風プロフィール設定（Hikari: イラストレーター、Kaze: プログラマー）|
+| ★6 | Supabase永続化 | 未着手 | セッション・会話ログの永続化 |
+| ★7 | X OAuth + 人格生成 | 未着手 | Xプロフィールから精霊を自動生成 |

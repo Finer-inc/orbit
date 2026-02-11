@@ -1,9 +1,18 @@
 import type { WorldObjectEntry } from '../../src/types/world.ts'
 
+export interface BedInfo {
+  houseId: string
+  position: [number, number, number]
+}
+
 export interface WorldMapData {
   objects: WorldObjectEntry[]
+  beds: BedInfo[]
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
 }
+
+/** ベッド中心のローカル座標 — House.tsx の BED_LOCAL_OFFSET と一致させること */
+const BED_LOCAL_OFFSET: [number, number, number] = [1.5, 0.35, -0.5]
 
 // --- BBox computation functions (ported from worldObjectRegistry.ts, pure math) ---
 
@@ -21,11 +30,11 @@ export function computeHouseBBox(
   pos: [number, number, number],
   rotation: [number, number, number],
 ): { min: [number, number, number]; max: [number, number, number] } {
-  // 壁: 4x3x3, 屋根頂点: y=5, 煙突頂点: y=5.1
+  // 壁: 6x3.5x5, 屋根頂点: y=6, 煙突頂点: y=6.2
   // ローカル空間での角をrotationYで回転しAABBを再計算
-  const halfW = 2   // 4/2
-  const halfD = 1.5  // 3/2
-  const height = 5.1
+  const halfW = 3   // 6/2
+  const halfD = 2.5  // 5/2
+  const height = 6.2
 
   const corners: [number, number][] = [
     [-halfW, -halfD],
@@ -75,39 +84,104 @@ export function computeTreeBBox(
 export function createWorldMap(): WorldMapData {
   const objects: WorldObjectEntry[] = []
 
-  // Fountain
-  const fountainPos: [number, number, number] = [0, 0, 0]
+  // Fountains
+  const fountain1Pos: [number, number, number] = [0, 0, 0]
+  const fountain2Pos: [number, number, number] = [18, 0, 0]
+  const fountain3Pos: [number, number, number] = [0, 0, 18]
+  const fountain4Pos: [number, number, number] = [18, 0, 18]
   objects.push({
     id: 'fountain-0',
     type: 'fountain',
-    position: fountainPos,
-    boundingBox: computeFountainBBox(fountainPos),
+    position: fountain1Pos,
+    boundingBox: computeFountainBBox(fountain1Pos),
+  })
+  objects.push({
+    id: 'fountain-1',
+    type: 'fountain',
+    position: fountain2Pos,
+    boundingBox: computeFountainBBox(fountain2Pos),
+  })
+  objects.push({
+    id: 'fountain-2',
+    type: 'fountain',
+    position: fountain3Pos,
+    boundingBox: computeFountainBBox(fountain3Pos),
+  })
+  objects.push({
+    id: 'fountain-3',
+    type: 'fountain',
+    position: fountain4Pos,
+    boundingBox: computeFountainBBox(fountain4Pos),
   })
 
   // Houses
   const houses: { position: [number, number, number]; rotation: [number, number, number] }[] = [
+    // 広場1・2周辺
     { position: [-10, 0, -5], rotation: [0, Math.PI / 4, 0] },
-    { position: [10, 0, -5], rotation: [0, -Math.PI / 4, 0] },
+    { position: [-10, 0, 6], rotation: [0, -Math.PI / 6, 0] },
+    { position: [28, 0, -5], rotation: [0, -Math.PI / 4, 0] },
+    { position: [28, 0, 6], rotation: [0, Math.PI / 6, 0] },
+    // 広場3周辺
+    { position: [-10, 0, 13], rotation: [0, Math.PI / 4, 0] },
+    { position: [-10, 0, 24], rotation: [0, -Math.PI / 6, 0] },
+    // 広場4周辺
+    { position: [28, 0, 13], rotation: [0, -Math.PI / 4, 0] },
+    { position: [28, 0, 24], rotation: [0, Math.PI / 6, 0] },
   ]
+  const beds: BedInfo[] = []
   houses.forEach((h, i) => {
+    const houseId = `house-${i}`
     objects.push({
-      id: `house-${i}`,
+      id: houseId,
       type: 'house',
       position: h.position,
       boundingBox: computeHouseBBox(h.position, h.rotation),
+    })
+    // ベッドのワールド座標を計算
+    const cosR = Math.cos(h.rotation[1])
+    const sinR = Math.sin(h.rotation[1])
+    const bedX = h.position[0] + BED_LOCAL_OFFSET[0] * cosR + BED_LOCAL_OFFSET[2] * sinR
+    const bedZ = h.position[2] + (-BED_LOCAL_OFFSET[0] * sinR + BED_LOCAL_OFFSET[2] * cosR)
+    beds.push({
+      houseId,
+      position: [bedX, BED_LOCAL_OFFSET[1], bedZ],
     })
   })
 
   // Trees
   const trees: { position: [number, number, number]; scale?: number }[] = [
-    { position: [-6, 0, 8], scale: 1.2 },
-    { position: [7, 0, 9], scale: 0.9 },
+    // 広場1周辺
+    { position: [-6, 0, 10], scale: 1.2 },
     { position: [-14, 0, 3], scale: 1.0 },
-    { position: [14, 0, 2], scale: 1.1 },
     { position: [-8, 0, -12], scale: 0.8 },
-    { position: [9, 0, -11], scale: 1.3 },
     { position: [0, 0, -14], scale: 1.0 },
     { position: [-3, 0, 12], scale: 0.7 },
+    // 広場1-2間
+    { position: [9, 0, 6], scale: 0.9 },
+    { position: [9, 0, -6], scale: 1.1 },
+    // 広場2周辺
+    { position: [24, 0, 10], scale: 1.2 },
+    { position: [18, 0, -14], scale: 1.0 },
+    { position: [32, 0, 3], scale: 1.0 },
+    { position: [26, 0, -12], scale: 0.8 },
+    { position: [21, 0, 12], scale: 0.7 },
+    { position: [12, 0, 10], scale: 1.3 },
+    // 広場3周辺
+    { position: [-6, 0, 28], scale: 1.2 },
+    { position: [-14, 0, 21], scale: 1.0 },
+    { position: [-8, 0, 6], scale: 0.8 },
+    { position: [0, 0, 32], scale: 1.0 },
+    { position: [-3, 0, 30], scale: 0.7 },
+    // 広場3-4間
+    { position: [9, 0, 24], scale: 0.9 },
+    { position: [9, 0, 12], scale: 1.1 },
+    // 広場4周辺
+    { position: [24, 0, 28], scale: 1.2 },
+    { position: [18, 0, 32], scale: 1.0 },
+    { position: [32, 0, 21], scale: 1.0 },
+    { position: [26, 0, 6], scale: 0.8 },
+    { position: [21, 0, 30], scale: 0.7 },
+    { position: [12, 0, 28], scale: 1.3 },
   ]
   trees.forEach((t, i) => {
     objects.push({
@@ -130,6 +204,7 @@ export function createWorldMap(): WorldMapData {
 
   return {
     objects,
+    beds,
     bounds: { minX, maxX, minZ, maxZ },
   }
 }

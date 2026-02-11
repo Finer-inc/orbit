@@ -12,8 +12,8 @@ export interface TreesProps {
 function Tree({
   position = [0, 0, 0],
   scale = 1,
-  trunkColor = "#6b4226",
-  leafColor = "#2d5a1e",
+  trunkColor = "#9b6e4c",
+  leafColor = "#4daa55",
 }: TreeProps) {
   return (
     <group position={position} scale={scale}>

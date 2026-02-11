@@ -39,6 +39,8 @@ export interface VisionAPI {
 
 // === 精霊関連の型（バックエンド用） ===
 
+export type SpiritBehaviorState = 'idle' | 'active' | 'conversing' | 'resting'
+
 export interface SpiritState {
   id: string
   name: string
@@ -46,6 +48,18 @@ export interface SpiritState {
   rotationY: number
   currentAction: string | null
   lastThinkAt: number
+  color: string
+  lastSpeech?: string
+  lastSpeechAt?: number
+  // 行動システム
+  state: SpiritBehaviorState
+  goal?: string
+  subgoal?: string
+  stamina: number
+  maxStamina: number
+  staminaUpdatedAt: number
+  mentalEnergy: number
+  maxMentalEnergy: number
 }
 
 export interface NearbySpiritInfo {
@@ -55,10 +69,43 @@ export interface NearbySpiritInfo {
   position: [number, number, number]
 }
 
+export type Volume = 'whisper' | 'normal' | 'shout'
+
+// 到達距離（ユニット）
+export const VOLUME_RANGE: Record<Volume, number> = {
+  whisper: 1.5,
+  normal: 5.0,
+  shout: 15.0,
+}
+
+// サーバー内部で保持する発話メッセージ
+export interface SpatialMessage {
+  from: string                        // 発話者名
+  fromId: string                      // 発話者ID
+  to?: string                         // 宛先精霊ID（任意）
+  toName?: string                     // 宛先精霊名（任意）
+  message: string
+  volume: Volume
+  position: [number, number, number]  // 発話位置
+  timestamp: number
+}
+
+// observe時に返される「聞こえた声」
+export interface HeardVoice {
+  from: string       // 発話者名
+  fromId: string     // 発話者ID
+  to?: string        // 宛先精霊ID
+  toName?: string    // 宛先精霊名
+  message: string
+  volume: Volume
+  distance: number   // リスナーからの距離
+}
+
 export interface ObservationResult {
   objects: VisibleObject[]
   spirits: NearbySpiritInfo[]
   timeOfDay: TimeOfDay
+  voices: HeardVoice[]
 }
 
 // === ツール関連の型 ===

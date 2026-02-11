@@ -15,9 +15,10 @@ export function WorldLayout({ children }: WorldLayoutProps) {
       {children}
       <OrbitControls
         makeDefault
-        target={[0, 1, 0]}
-        minDistance={5}
-        maxDistance={40}
+        enablePan
+        minDistance={2}
+        maxDistance={120}
+        maxPolarAngle={Math.PI / 2.1}
       />
     </Canvas>
   )

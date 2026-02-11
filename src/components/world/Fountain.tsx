@@ -29,14 +29,14 @@ export default function Fountain({ position = [0, 0, 0] }: FountainProps) {
       {/* 台座 — 八角形の石台 */}
       <mesh position={[0, 0.4, 0]}>
         <cylinderGeometry args={[3, 3.5, 0.8, 8]} />
-        <meshStandardMaterial color="#9a9a9a" flatShading />
+        <meshStandardMaterial color="#ccc6be" flatShading />
       </mesh>
 
       {/* 内側プール — 水面 */}
       <mesh position={[0, 0.85, 0]}>
         <cylinderGeometry args={[2.5, 2.5, 0.3, 8]} />
         <meshStandardMaterial
-          color="#4a90d9"
+          color="#6cbaf0"
           transparent
           opacity={0.7}
           flatShading
@@ -46,13 +46,13 @@ export default function Fountain({ position = [0, 0, 0] }: FountainProps) {
       {/* 中央柱 */}
       <mesh position={[0, 1.8, 0]}>
         <cylinderGeometry args={[0.3, 0.4, 2, 8]} />
-        <meshStandardMaterial color="#9a9a9a" flatShading />
+        <meshStandardMaterial color="#ccc6be" flatShading />
       </mesh>
 
       {/* 上段受け皿 */}
       <mesh position={[0, 2, 0]}>
         <cylinderGeometry args={[1, 1.2, 0.3, 8]} />
-        <meshStandardMaterial color="#9a9a9a" flatShading />
+        <meshStandardMaterial color="#ccc6be" flatShading />
       </mesh>
 
       {/* 水柱アニメーション — 8個のローポリ球 */}
@@ -73,7 +73,7 @@ export default function Fountain({ position = [0, 0, 0] }: FountainProps) {
           >
             <sphereGeometry args={[0.08, 4, 4]} />
             <meshStandardMaterial
-              color="#6ab4f0"
+              color="#8ed4ff"
               transparent
               opacity={0.6}
               flatShading

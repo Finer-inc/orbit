@@ -13,9 +13,9 @@ const TIME_CONFIG = {
     sunIntensity: 0.8,
   },
   day: {
-    bgColor: '#87CEEB',
-    sunColor: '#ffffff',
-    sunIntensity: 1.2,
+    bgColor: '#b0e0f6',
+    sunColor: '#fff5e6',
+    sunIntensity: 1.8,
   },
   evening: {
     bgColor: '#FF6B6B',
@@ -46,7 +46,7 @@ export default function WorldEnvironment({
         intensity={config.sunIntensity}
         position={[10, 20, 10]}
       />
-      <ambientLight intensity={0.4} />
+      <ambientLight intensity={0.65} />
       <fog attach="fog" args={[config.bgColor, 30, 80]} />
     </>
   )
