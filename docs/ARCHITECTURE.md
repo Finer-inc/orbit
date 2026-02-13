@@ -1,7 +1,7 @@
 # Seirei アーキテクチャ設計
 
 > 作成日: 2026-02-10
-> 最終更新: 2026-02-10
+> 最終更新: 2026-02-13
 
 ---
 
@@ -60,13 +60,12 @@
 │                                                  │
 │ ├── AgentLoop (NewCustomLoop で精霊用に改造)     │
 │ │   セッション永続化・文脈圧縮・ツール実行ループ │
-│ ├── AnthropicProvider (カスタム実装)             │
-│ │   ※ PicoClawのHTTPProviderはOpenAI形式のみ    │
-│ │     Anthropic native APIには非対応のため自作   │
-│ ├── ツール: observe, move_to, walk_to, look_at, say (think等は未実装) │
+│ ├── GLMProvider / AnthropicProvider              │
+│ │   LLM_PROVIDER env var で切替                  │
+│ ├── ツール: observe, move_to, walk_to, look_at, say, set_goal, rest (think/report/remember: 未実装) │
 │ └── オーケストレーター: 未実装（goroutine×1000） │
 │                                                  │
-│ LLM:  Anthropic API (Claude Haiku)               │
+│ LLM:  GLM-4.7（デフォルト）/ Anthropic API（代替）│
 └──────────────────────────────────────────────────┘
 ```
 
@@ -196,18 +195,25 @@ PicoClawの`SOUL.md`/`IDENTITY.md`をXプロフィールから動的生成。
 
 ```
 spirits/                            ← Go module
-├── cmd/main.go                     ← エントリポイント (2体並行goroutine × ProcessDirect × time.Ticker)
-├── worldclient/client.go           ← TS World Server用HTTPクライアント (Register, Observe, Move, Say, LookAt, GetSpirit, GetObject)
+├── cmd/
+│   ├── main.go                     ← エントリポイント (行動ループ, 状態管理, リソースシステム)
+│   ├── spiritgen.go                ← 精霊の自動生成 (名前, 人格, 色, 位置, タイミング)
+│   └── namegen.go                  ← 組み合わせ名前生成器
+├── worldclient/client.go           ← TS World Server用HTTPクライアント
 ├── spirittools/
-│   ├── observe.go                  ← 観察ツール (精霊座標表示 + 未読メッセージ受信)
-│   ├── move_to.go                  ← 移動ツール (オブジェクトID→座標解決→移動)
-│   ├── walk_to.go                  ← 座標移動ツール (任意座標へ移動、1.5m手前停止)
-│   ├── look_at.go                  ← 向き変更ツール (移動せずに指定方向を向く)
-│   └── say.go                      ← 発話ツール (空間ブロードキャスト、距離ベースで届く)
-├── anthropic/provider.go           ← Anthropic native API プロバイダ (PicoClaw LLMProvider interface)
+│   ├── observe.go                  ← 観察ツール
+│   ├── move_to.go                  ← オブジェクトID指定移動
+│   ├── walk_to.go                  ← 座標指定移動（1.5m手前停止）
+│   ├── look_at.go                  ← 向き変更ツール
+│   ├── say.go                      ← 発話ツール（空間ブロードキャスト）
+│   ├── set_goal.go                 ← 目標設定ツール
+│   ├── rest.go                     ← 休憩ツール（ベッド近くで使用）
+│   └── actionlog.go                ← 短期記憶（直近行動のリングバッファ）
+├── anthropic/provider.go           ← Anthropic API プロバイダ
+├── glm/                            ← GLM-4 API プロバイダ（デフォルト）
 ├── sessions/                       ← PicoClaw SessionManagerによる自動永続化 (gitignored)
 ├── go.mod                          ← picoclaw/ を replace directive で参照
-└── .env                            ← ANTHROPIC_API_KEY (gitignored)
+└── .env                            ← GLM_API_KEY or ANTHROPIC_API_KEY (gitignored)
 ```
 
 PicoClaw改造箇所 (picoclaw/):
@@ -281,9 +287,9 @@ cd spirits && go build -o seirei-spirit ./cmd && ./seirei-spirit
 | ★1 | PicoClaw動作確認 | **完了** | clone、ビルド成功 (Go 1.25.7) |
 | ★2 | コード読解・改造ポイント特定 | **完了** | AgentLoop: privateフィールド問題 → NewCustomLoop追加で解決。HTTPProvider: OpenAI形式のみ → カスタムAnthropicProvider自作 |
 | ★3 | 精霊用ツール実装 (Go) | **一部完了** | observe, move_to, walk_to, look_at, say: 完了。think: 未着手 |
-| ★3.5 | 自律ループ + 複数精霊 | **完了** | 2体(Hikari, Kaze)がgoroutineで並行自律行動。精霊同士の会話が成立 |
+| ★3.5 | 自律ループ + 複数精霊 | **完了** | SPIRIT_COUNT環境変数で精霊数を指定（デフォルト5体）。自動名前生成・人格生成・色生成。goroutineで並行自律行動 |
 | ★4 | ワールドサーバー | **HTTP API完了** | TS維持確定 (Hono)。Go精霊からHTTP localhostで呼び出し |
 | ★5 | フロントエンド表示 | **完了** | あつ森風カメラ + ポーリング + 精霊描画 + 名前/吹き出し |
-| ★5.5 | モック人格 | **完了** | 精霊ごとにX風プロフィール設定（Hikari: イラストレーター、Kaze: プログラマー）|
+| ★5.5 | 動的人格生成 | **完了** | 精霊ごとに持ち主プロフィール・興味・性格をランダム生成。X風人格設定 |
 | ★6 | Supabase永続化 | 未着手 | セッション・会話ログの永続化 |
 | ★7 | X OAuth + 人格生成 | 未着手 | Xプロフィールから精霊を自動生成 |

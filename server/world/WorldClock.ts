@@ -1,13 +1,17 @@
 import type { TimeOfDay } from '../../src/types/world.ts'
 
+/** ゲーム内1日の実時間（分） */
+const DAY_LENGTH_MINUTES = 24
+
 export class WorldClock {
   private startedAt: number
   private timeScale: number
   private forcedHour: number | null = null
 
-  constructor(timeScale: number = 60) {
+  constructor(dayLengthMinutes: number = DAY_LENGTH_MINUTES) {
     this.startedAt = Date.now()
-    this.timeScale = timeScale
+    // 実時間 dayLengthMinutes 分 = ゲーム内24時間 → timeScale = 24*60 / dayLengthMinutes
+    this.timeScale = (24 * 60) / dayLengthMinutes
   }
 
   getHour(): number {

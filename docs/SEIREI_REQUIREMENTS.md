@@ -407,6 +407,15 @@ Spirit Instances（独立プロセス）
 | Viteプロキシ設定 | vite.config.ts で /api → localhost:3001 にプロキシ。CORS問題を解決 |
 | 精霊検知を視野ベースに変更 | observe()の精霊検知を360度距離ベースからFOV 90°視野ベースに変更。背後の精霊は検知不可。声は全方位 |
 | look_atツール | 移動せずに向きを変えるツール。サーバーAPI + Goツール。会話前に相手の方を向く行動が可能に |
+| set_goalツール + restツール (Go) | 目標・アプローチ宣言ツール（サーバーに状態同期）と休憩ツール（ベッド近接判定）を実装 |
+| 行動状態ベースの精霊ループ | idle/active/conversing/resting 4状態。思考間隔・リソース消費が状態に連動 |
+| リソースシステム (stamina + mentalEnergy) | 体力（移動消費、200/200）と思考力（LLM消費、100/100）。枯渇でresting強制。自然回復 |
+| 動的精霊生成 (spiritgen) | SPIRIT_COUNT環境変数で精霊数指定（デフォルト5体）。名前・人格・色・位置・タイミングを自動生成 |
+| GLMプロバイダ対応 | LLM_PROVIDER=glm（デフォルト）でGLM-4.7、=anthropicでClaude。レートリミット対策 |
+| 4広場ワールド拡張 | 噴水4基、家8棟、木25本の2×2グリッド広場レイアウト |
+| 短期記憶 (ActionLog) | 直近30件の行動をリングバッファで保持。LLMプロンプトに含めて文脈を維持 |
+| 時計表示 + クライアント補間 | サーバー時刻を30秒ポーリング + クライアント側で1秒tick補間。右上に時刻表示 |
+| 視野角150°に拡大 | オブジェクト・精霊の視野を90°から150°に拡大 |
 
 ### 技術スタック変更
 
@@ -422,8 +431,8 @@ TS実装（`server/`）はプロトタイプ/参考実装として残す。
 |--------|------|------|
 | ★1 | PicoClaw動作確認 | **完了** |
 | ★2 | コード読解・改造ポイント特定 | **完了** |
-| ★3 | 精霊用ツール実装 (Go) | observe, move_to, walk_to, look_at, say完了。think未着手 |
-| ★3.5 | 自律ループ + 複数精霊 + 会話 | **完了** (2体goroutine並行 + メッセージキュー + ProcessDirect) |
+| ★3 | 精霊用ツール実装 (Go) | observe, move_to, walk_to, look_at, say, set_goal, rest完了。think/report/remember未着手 |
+| ★3.5 | 自律ループ + 複数精霊 + 会話 | **完了** (SPIRIT_COUNT動的生成 + 行動状態ループ + リソースシステム + goroutine並行) |
 | ★4 | ワールドサーバー HTTP API | **完了** (TSのまま、Go移植不要) |
 | ★5 | フロントエンド表示 | **完了** (あつ森カメラ + ポーリング + 精霊描画 + ラベル/吹き出し) |
 | ★6 | Supabase永続化 | 未着手 |
@@ -436,9 +445,10 @@ TS実装（`server/`）はプロトタイプ/参考実装として残す。
 - ワールドサーバーはTypeScriptのまま。Go移植は不要（1000体@5分間隔 = ~3.3 req/sec、HTTP localhostで十分）
 - PicoClawを最小限改造（2ファイル）してAgentLoop・SessionManager・文脈圧縮をそのまま利用。`NewCustomLoop()`で外部ツール・システムプロンプトを注入
 - Anthropic APIはPicoClawのHTTPProvider（OpenAI互換のみ）では使えないため、独自AnthropicProviderを実装
-- 精霊の検知は視野（FOV 90°）ベース。背後の精霊は見えない。声だけは全方位で聞こえる。look_atツールで向きを変えてからobserveする運用
+- 精霊の検知は視野（FOV 150°）ベース。背後の精霊は見えない。声だけは全方位で聞こえる。look_atツールで向きを変えてからobserveする運用
 - コミュニケーションは**空間ブロードキャスト方式（say）**を採用。talk_to（宛先指定ダイレクトメッセージ）から変更。volumeで到達距離を制御（whisper: 1.5m, normal: 5.0m, shout: 15.0m）、toで宛先意図を示すが配信範囲には影響しない。割り込み・盗み聞き等の創発的行動が可能
-- フロントエンドはWebSocketではなくREST APIポーリング（2秒間隔）で精霊位置を取得。精霊の思考間隔が15秒なので十分な更新頻度
+- フロントエンドはWebSocketではなくREST APIポーリング（2秒間隔）で精霊位置を取得。精霊の思考間隔は状態依存（idle: 17-27秒、active: 6-9秒、conv: 2-3秒）
+- デフォルトLLMはGLM-4.7（LLM_PROVIDER環境変数でglm/anthropic切替可能）
 
 詳細は `ARCHITECTURE.md` を参照。
 

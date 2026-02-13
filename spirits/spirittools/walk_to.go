@@ -11,12 +11,13 @@ import (
 const stopDistance = 1.5
 
 type WalkToTool struct {
-	client   *worldclient.Client
-	spiritID string
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
 }
 
-func NewWalkToTool(client *worldclient.Client, spiritID string) *WalkToTool {
-	return &WalkToTool{client: client, spiritID: spiritID}
+func NewWalkToTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *WalkToTool {
+	return &WalkToTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *WalkToTool) Name() string {
@@ -79,6 +80,8 @@ func (t *WalkToTool) Execute(ctx context.Context, args map[string]interface{}) (
 	if !result.Success {
 		return "移動に失敗しました", nil
 	}
+
+	t.actionLog.Add("walk_to", fmt.Sprintf("[%.1f, %.1f]に向かって歩いた → [%.1f, %.1f]", targetX, targetZ, result.NewPosition[0], result.NewPosition[2]))
 
 	return fmt.Sprintf("【移動完了】目標[%.1f, %.1f]の近くに移動しました。現在位置: [%.1f, %.1f, %.1f]",
 		targetX, targetZ, result.NewPosition[0], result.NewPosition[1], result.NewPosition[2]), nil

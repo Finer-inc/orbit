@@ -3,17 +3,25 @@ package spirittools
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"seirei/spirits/worldclient"
 )
 
-type SayTool struct {
-	client   *worldclient.Client
-	spiritID string
+var volumeRange = map[string]float64{
+	"whisper": 1.5,
+	"normal":  5.0,
+	"shout":   15.0,
 }
 
-func NewSayTool(client *worldclient.Client, spiritID string) *SayTool {
-	return &SayTool{client: client, spiritID: spiritID}
+type SayTool struct {
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
+}
+
+func NewSayTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *SayTool {
+	return &SayTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *SayTool) Name() string {
@@ -76,7 +84,26 @@ func (t *SayTool) Execute(ctx context.Context, args map[string]interface{}) (str
 	}
 
 	if to != "" {
+		// toの相手に届いたかチェック
+		reached := true
+		var distToTarget float64
+		self, _ := t.client.GetSpirit(t.spiritID)
+		target, _ := t.client.GetSpirit(to)
+		if self != nil && target != nil {
+			dx := self.Position[0] - target.Position[0]
+			dz := self.Position[2] - target.Position[2]
+			distToTarget = math.Sqrt(dx*dx + dz*dz)
+			if distToTarget > volumeRange[volume] {
+				reached = false
+			}
+		}
+		if !reached {
+			t.actionLog.Add("say", fmt.Sprintf("%sに「%s」と言ったが、%.0fm先で声が届かなかった", target.Name, message, distToTarget))
+			return fmt.Sprintf("【発話】「%s」と言った（%s、届いた精霊: %d体）。ただし %s は %.0fm先にいるため声が届かなかった。近づくか、より大きな声(shout=15m)を使ってください", message, volumeLabel, result.Hearers, target.Name, distToTarget), nil
+		}
+		t.actionLog.Add("say", fmt.Sprintf("%sに「%s」と言った（%s、%d体に届いた）", to, message, volumeLabel, result.Hearers))
 		return fmt.Sprintf("【発話】%sに向かって「%s」と言った（%s、届いた精霊: %d体）", to, message, volumeLabel, result.Hearers), nil
 	}
+	t.actionLog.Add("say", fmt.Sprintf("「%s」と言った（%s、%d体に届いた）", message, volumeLabel, result.Hearers))
 	return fmt.Sprintf("【発話】「%s」と言った（%s、届いた精霊: %d体）", message, volumeLabel, result.Hearers), nil
 }

@@ -4,7 +4,7 @@
                           ┌─────────────────────────┐
                           │     External Services    │
                           ├─────────────────────────┤
-                          │  Anthropic API (Haiku)   │
+                          │  GLM-4 API / Anthropic API│
                           │  X (Twitter) OAuth       │
                           │  Supabase (DB)           │
                           └──────┬──────────────────┘
@@ -24,7 +24,8 @@
 │  │       │                         │                       │  │
 │  │       │    ┌────────────────────┘                       │  │
 │  │       │    │  Spirit Tools                              │  │
-│  │       │    │  observe / move_to / talk_to / think       │  │
+│  │       │    │  observe / move_to / walk_to / look_at     │  │
+│  │       │    │  / say / set_goal / rest                   │  │
 │  │       │    │                                            │  │
 │  └───────┼────┼────────────────────────────────────────────┘  │
 │          │    │                                                │
@@ -46,7 +47,7 @@
 │                              │                                 │
 └──────────────────────────────┼─────────────────────────────────┘
                                │
-                               │ WebSocket / REST (未実装)
+                               │ REST ポーリング（実装済）
                                │
 ┌──────────────────────────────┼─────────────────────────────────┐
 │                       Browser (TypeScript)                      │
@@ -83,18 +84,20 @@
 │  │      │    │          │                                     │
 │  └──────┘    └──────────┘                                     │
 │                                                               │
-│  ※ observe / move_to は HTTP で TS World Server を呼び出す    │
-│  ※ think / remember は Go プロセス内で完結                     │
+│  ※ observe / move_to / walk_to / look_at / say は HTTP で     │
+│  │  TS World Server を呼び出す                                │
+│  ※ set_goal / rest は Go プロセス内で完結                      │
 └─────────────────────────────────────────────────────────────┘
           │                                     ▲
-          │ HTTP (observe, move_to, talk_to)     │ レスポンス
+          │ HTTP (observe, move_to, walk_to,      │ レスポンス
+          │  look_at, say, set_goal, rest)        │
           ▼                                     │
 ┌─────────────────────────────────────────────────────────────┐
 │              TS Process: World Server (localhost:3001)        │
 │                                                               │
-│  observe  → 視界内オブジェクト + 近くの精霊を返す              │
+│  observe  → 視界内オブジェクト + 精霊 + 聞こえた声を返す       │
 │  move_to  → 位置更新して結果を返す                             │
-│  talk_to  → 相手への発話を中継                                 │
+│  say      → 空間ブロードキャスト（距離ベースで到達判定）       │
 └─────────────────────────────────────────────────────────────┘
 
          ↓ スケジューラが次の思考時刻まで待機 ↓
@@ -107,7 +110,7 @@ User (Browser)
   │
   │ 画面を開く
   ▼
-Frontend ──WebSocket/REST (未実装)──→ TS World Server (localhost:3001)
+Frontend ──REST ポーリング（実装済）──→ TS World Server (localhost:3001)
                                        │
                                        ├─→ 精霊の位置・状態を配信
                                        ├─→ 会話イベントを配信
@@ -121,11 +124,10 @@ AgentLoop (Go Process)
   │
   │                        HTTP localhost:3001
   ├─ observe ─────────────────→ TS World Server ──→ 視界内オブジェクト + 近くの精霊
-  ├─ move_to ─────────────────→ TS World Server ──→ 位置更新 ──→ WebSocketで配信
-  ├─ talk_to ─────────────────→ TS World Server ──→ 相手に受信 + ログ保存
+  ├─ move_to ─────────────────→ TS World Server ──→ 位置更新 ──→ RESTで取得可
+  ├─ say     ─────────────────→ TS World Server ──→ 空間ブロードキャスト
   │
   │                        Go Process内で完結
-  ├─ think   ──→ Session (Go)   ──→ 記憶に保存
-  ├─ report  ──→ Supabase       ──→ 持ち主に通知
-  └─ remember──→ Supabase       ──→ 長期記憶に保存
+  ├─ set_goal──→ 内部目標を設定
+  └─ rest    ──→ 休止状態に移行
 ```

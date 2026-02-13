@@ -51,6 +51,7 @@ export interface SpiritState {
   color: string
   lastSpeech?: string
   lastSpeechAt?: number
+  lastSpeechVolume?: Volume
   // 行動システム
   state: SpiritBehaviorState
   goal?: string

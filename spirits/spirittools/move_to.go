@@ -9,12 +9,13 @@ import (
 )
 
 type MoveToTool struct {
-	client   *worldclient.Client
-	spiritID string
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
 }
 
-func NewMoveToTool(client *worldclient.Client, spiritID string) *MoveToTool {
-	return &MoveToTool{client: client, spiritID: spiritID}
+func NewMoveToTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *MoveToTool {
+	return &MoveToTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *MoveToTool) Name() string {
@@ -69,6 +70,8 @@ func (t *MoveToTool) Execute(ctx context.Context, args map[string]interface{}) (
 			math.Pow(result.NewPosition[2]-targetZ, 2),
 	)
 	_ = dist
+
+	t.actionLog.Add("move_to", fmt.Sprintf("%s（%s）の近くに移動した → [%.1f, %.1f]", target, obj.Type, result.NewPosition[0], result.NewPosition[2]))
 
 	return fmt.Sprintf("【移動完了】%s（%s）の近くに移動しました。現在位置: [%.1f, %.1f, %.1f]",
 		target, obj.Type, result.NewPosition[0], result.NewPosition[1], result.NewPosition[2]), nil

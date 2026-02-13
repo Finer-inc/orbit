@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"time"
 )
 
 // Plaza centers where spirits spawn around (2x2 grid).
@@ -74,6 +75,7 @@ func generateSpirits(count int, nameGen NameGenerator) []spiritConfig {
 		color := generateColor(i, count)
 		pos := generatePosition(i, count)
 		persona := generatePersona(i, shuffledOwners)
+		timing := generateTiming()
 
 		spirits[i] = spiritConfig{
 			id:       fmt.Sprintf("spirit-go-%d", i+1),
@@ -81,10 +83,28 @@ func generateSpirits(count int, nameGen NameGenerator) []spiritConfig {
 			position: pos,
 			color:    color,
 			persona:  persona,
+			timing:   timing,
 		}
 	}
 
 	return spirits
+}
+
+// generateTiming creates randomized per-spirit timing intervals.
+// Each spirit gets unique intervals so they naturally drift apart over time.
+func generateTiming() spiritTiming {
+	return spiritTiming{
+		idleThink:   randDuration(17, 27),  // base 22s ± ~5s (was 45s)
+		activeThink: randDuration(6, 9),    // base 7s ± ~1.5s (was 15s)
+		convThink:   randDuration(2, 3),    // base 2.5s ± ~0.5s (was 4s)
+		restCheck:   randDuration(6, 9),    // base 7s ± ~1.5s (was 15s)
+	}
+}
+
+// randDuration returns a random duration between minSec and maxSec seconds.
+func randDuration(minSec, maxSec float64) time.Duration {
+	secs := minSec + rand.Float64()*(maxSec-minSec)
+	return time.Duration(secs * float64(time.Second))
 }
 
 // generateColor produces a pastel hex color using evenly-spaced hues.

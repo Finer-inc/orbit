@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
+import { MOUSE } from 'three'
 import type { ReactNode } from 'react'
 
 interface WorldLayoutProps {
@@ -19,6 +20,11 @@ export function WorldLayout({ children }: WorldLayoutProps) {
         minDistance={2}
         maxDistance={120}
         maxPolarAngle={Math.PI / 2.1}
+        mouseButtons={{
+          LEFT: MOUSE.ROTATE,
+          MIDDLE: MOUSE.PAN,
+          RIGHT: MOUSE.DOLLY,
+        }}
       />
     </Canvas>
   )

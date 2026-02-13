@@ -287,7 +287,7 @@ export class WorldServer {
     }
   }
 
-  getVisibleSpirits(spiritId: string, radius: number = 15, fovDeg: number = 90): NearbySpiritInfo[] {
+  getVisibleSpirits(spiritId: string, radius: number = 15, fovDeg: number = 150): NearbySpiritInfo[] {
     const spirit = this.spirits.get(spiritId)
     if (!spirit) {
       return []
@@ -357,6 +357,7 @@ export class WorldServer {
     // Update speaker's lastSpeech for frontend display
     from.lastSpeech = message
     from.lastSpeechAt = Date.now()
+    from.lastSpeechVolume = volume
 
     const msg: SpatialMessage = {
       from: from.name,

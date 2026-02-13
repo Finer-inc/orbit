@@ -262,7 +262,7 @@ export function computeVisibleObjects(
   objects: WorldObjectEntry[],
   config?: { fov?: number; near?: number; far?: number; eyeHeight?: number },
 ): VisibleObject[] {
-  const fov = config?.fov ?? 90
+  const fov = config?.fov ?? 150
   const near = config?.near ?? 0.5
   const far = config?.far ?? 30
   const eyeHeight = config?.eyeHeight ?? 1.5

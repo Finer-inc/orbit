@@ -7,12 +7,13 @@ interface CharacterProps {
   rotationY: number
   color?: string
   isResting?: boolean
+  speechRadius?: number
   children?: React.ReactNode
 }
 
 const LERP_SPEED = 0.08
 
-export default function Character({ position, rotationY, color = '#e8b88a', isResting = false, children }: CharacterProps) {
+export default function Character({ position, rotationY, color = '#e8b88a', isResting = false, speechRadius, children }: CharacterProps) {
   const groupRef = useRef<THREE.Group>(null!)
   const bodyRef = useRef<THREE.Group>(null!)
   const currentRotation = useRef(rotationY)
@@ -72,13 +73,13 @@ export default function Character({ position, rotationY, color = '#e8b88a', isRe
         </mesh>
 
         {/* 左腕 */}
-        <mesh position={[-0.5, 1.3, 0]}>
+        <mesh position={[-0.45, 1.3, 0]}>
           <boxGeometry args={[0.2, 0.6, 0.2]} />
           <meshStandardMaterial color={color} flatShading />
         </mesh>
 
         {/* 右腕 */}
-        <mesh position={[0.5, 1.3, 0]}>
+        <mesh position={[0.45, 1.3, 0]}>
           <boxGeometry args={[0.2, 0.6, 0.2]} />
           <meshStandardMaterial color={color} flatShading />
         </mesh>
@@ -107,6 +108,14 @@ export default function Character({ position, rotationY, color = '#e8b88a', isRe
           <meshStandardMaterial color="#222222" />
         </mesh>
       </group>
+
+      {/* 声の範囲リング */}
+      {speechRadius != null && (
+        <mesh rotation-x={-Math.PI / 2} position={[0, 0.05, 0]}>
+          <ringGeometry args={[speechRadius - 0.05, speechRadius, 64]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      )}
 
       {children}
     </group>

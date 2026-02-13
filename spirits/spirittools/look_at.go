@@ -8,12 +8,13 @@ import (
 )
 
 type LookAtTool struct {
-	client   *worldclient.Client
-	spiritID string
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
 }
 
-func NewLookAtTool(client *worldclient.Client, spiritID string) *LookAtTool {
-	return &LookAtTool{client: client, spiritID: spiritID}
+func NewLookAtTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *LookAtTool {
+	return &LookAtTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *LookAtTool) Name() string {
@@ -60,5 +61,6 @@ func (t *LookAtTool) Execute(ctx context.Context, args map[string]interface{}) (
 		return "向きを変えられませんでした", nil
 	}
 
+	t.actionLog.Add("look_at", fmt.Sprintf("[%.1f, %.1f]の方を向いた", x, z))
 	return fmt.Sprintf("【向き変更】[%.1f, %.1f]の方向を向きました", x, z), nil
 }

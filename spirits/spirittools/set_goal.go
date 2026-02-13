@@ -8,12 +8,13 @@ import (
 )
 
 type SetGoalTool struct {
-	client   *worldclient.Client
-	spiritID string
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
 }
 
-func NewSetGoalTool(client *worldclient.Client, spiritID string) *SetGoalTool {
-	return &SetGoalTool{client: client, spiritID: spiritID}
+func NewSetGoalTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *SetGoalTool {
+	return &SetGoalTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *SetGoalTool) Name() string {
@@ -59,7 +60,9 @@ func (t *SetGoalTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 
 	if subgoal != "" {
+		t.actionLog.Add("set_goal", fmt.Sprintf("目標を設定: %s（アプローチ: %s）", goal, subgoal))
 		return fmt.Sprintf("【目標設定】目標: %s / アプローチ: %s", goal, subgoal), nil
 	}
+	t.actionLog.Add("set_goal", fmt.Sprintf("目標を設定: %s", goal))
 	return fmt.Sprintf("【目標設定】目標: %s", goal), nil
 }

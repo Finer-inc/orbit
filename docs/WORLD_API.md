@@ -103,7 +103,7 @@ window.__seirei.vision.getVisibleObjects()
 **視野パラメータ (ブラウザ・サーバー共通):**
 | パラメータ | 値 |
 |---|---|
-| FOV | 90度 |
+| FOV | 150度 |
 | アスペクト比 | 1:1 |
 | Near | 0.5 |
 | Far | 30 |
@@ -150,6 +150,14 @@ GET /api/world/time → { timeOfDay, hour }
 | `color` | `string` | 服の色（CSS色値、例: `#e8b88a`） |
 | `lastSpeech` | `string?` | 最後の発話内容 |
 | `lastSpeechAt` | `number?` | 最後の発話時刻（Unix ms） |
+| `lastSpeechVolume` | `Volume?` | 最後の発話のvolume |
+| `state` | `SpiritBehaviorState` | 行動状態 (`idle`, `active`, `conversing`, `resting`) |
+| `goal` | `string?` | 現在の目標 |
+| `subgoal` | `string?` | 現在のアプローチ |
+| `stamina` | `number` | 体力（移動で消費、時間で回復） |
+| `maxStamina` | `number` | 体力上限（デフォルト200） |
+| `mentalEnergy` | `number` | 思考力（LLM呼び出しで消費） |
+| `maxMentalEnergy` | `number` | 思考力上限（デフォルト100） |
 
 ### カメラ
 
@@ -179,8 +187,8 @@ GET /api/world/time → { timeOfDay, hour }
 ```
 
 **検知方式:**
-- `objects`: FOV 90° 視野ベース（視界内のオブジェクトのみ）
-- `spirits`: FOV 90° 視野ベース（視界内の精霊のみ。背後の精霊は検知不可）
+- `objects`: FOV 150° 視野ベース（視界内のオブジェクトのみ）
+- `spirits`: FOV 150° 視野ベース（視界内の精霊のみ。背後の精霊は検知不可）
 - `voices`: 360度全方位（距離ベース。背後からの声も聞こえる）
 
 ### `move_to`
@@ -247,12 +255,8 @@ GET /api/world/time → { timeOfDay, hour }
   - Kaze（独り言）:「噴水の音が心地いい…」(距離3.1, 通常の声)
 ```
 
-### `think`
+### `think`（未実装）
 内省する。思考内容がMemoryStoreに記録される。
-
-```typescript
-{ name: 'think', args: { thought: '噴水のそばは落ち着く。' } }
-```
 
 ---
 
@@ -297,7 +301,7 @@ Response: SpiritState | { "error": "not found" }
 POST /api/spirits/:id/observe
 Response: ObservationResult (objects, spirits, timeOfDay, voices)
 ```
-`objects`と`spirits`はFOV 90°視野ベース（背後は検知不可）。`voices`は360度全方位（距離ベース）。未読メッセージがある場合 `voices` に含まれる（取得後クリアされる）。
+`objects`と`spirits`はFOV 150°視野ベース（背後は検知不可）。`voices`は360度全方位（距離ベース）。未読メッセージがある場合 `voices` に含まれる（取得後クリアされる）。
 
 #### 移動
 ```
@@ -321,13 +325,6 @@ Response: { "success": boolean, "hearers": number }
 ```
 発話位置からvolumeに応じた距離内の全精霊にメッセージが届く。`to`は宛先の意図を示すが、配信範囲には影響しない。`hearers`は実際にメッセージが届いた精霊の数。
 
-#### 観察（更新）
-```
-POST /api/spirits/:id/observe
-Response: ObservationResult (objects, spirits, timeOfDay, voices)
-```
-`voices`フィールドに、前回observe以降に範囲内で発話された声が含まれる。
-
 #### 時間帯
 ```
 GET /api/world/time
@@ -346,32 +343,52 @@ GET /api/world/objects/:id
 Response: WorldObjectEntry | { "error": "not found" }
 ```
 
+#### 精霊行動状態更新
+```
+PATCH /api/spirits/:id/state
+Body: { "state"?: "idle" | "active" | "conversing" | "resting", "goal"?: string, "subgoal"?: string }
+Response: SpiritState
+```
+
+#### 精霊エネルギー更新
+```
+PATCH /api/spirits/:id/energy
+Body: { "mentalEnergy": number, "maxMentalEnergy": number }
+Response: SpiritState
+```
+
+#### ベッド一覧
+```
+GET /api/world/beds
+Response: BedInfo[]
+```
+
 ---
 
 ## ワールドオブジェクト一覧
 
-### 噴水 (fountain)
+### 噴水 (fountain) — 4基
 | ID | 位置 |
 |---|---|
 | `fountain-0` | `[0, 0, 0]` |
+| `fountain-1` | `[18, 0, 0]` |
+| `fountain-2` | `[0, 0, 18]` |
+| `fountain-3` | `[18, 0, 18]` |
 
-### 家 (house)
+### 家 (house) — 8棟
 | ID | 位置 | 回転Y |
 |---|---|---|
-| `house-0` | `[-10, 0, -5]` | π/4 (45度) |
-| `house-1` | `[10, 0, -5]` | -π/4 (-45度) |
+| `house-0` | `[-10, 0, -5]` | π/4 |
+| `house-1` | `[-10, 0, 6]` | -π/6 |
+| `house-2` | `[28, 0, -5]` | -π/4 |
+| `house-3` | `[28, 0, 6]` | π/6 |
+| `house-4` | `[-10, 0, 13]` | π/4 |
+| `house-5` | `[-10, 0, 24]` | -π/6 |
+| `house-6` | `[28, 0, 13]` | -π/4 |
+| `house-7` | `[28, 0, 24]` | π/6 |
 
-### 木 (tree)
-| ID | 位置 | スケール |
-|---|---|---|
-| `tree-0` | `[-6, 0, 8]` | 1.2 |
-| `tree-1` | `[7, 0, 9]` | 0.9 |
-| `tree-2` | `[-14, 0, 3]` | 1.0 |
-| `tree-3` | `[14, 0, 2]` | 1.1 |
-| `tree-4` | `[-8, 0, -12]` | 0.8 |
-| `tree-5` | `[9, 0, -11]` | 1.3 |
-| `tree-6` | `[0, 0, -14]` | 1.0 |
-| `tree-7` | `[-3, 0, 12]` | 0.7 |
+### 木 (tree) — 25本
+`tree-0` 〜 `tree-24`。4つの広場周辺に分散配置。
 
 ---
 

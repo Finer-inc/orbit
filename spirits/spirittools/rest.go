@@ -11,12 +11,13 @@ import (
 const bedProximity = 2.0
 
 type RestTool struct {
-	client   *worldclient.Client
-	spiritID string
+	client    *worldclient.Client
+	spiritID  string
+	actionLog *ActionLog
 }
 
-func NewRestTool(client *worldclient.Client, spiritID string) *RestTool {
-	return &RestTool{client: client, spiritID: spiritID}
+func NewRestTool(client *worldclient.Client, spiritID string, actionLog *ActionLog) *RestTool {
+	return &RestTool{client: client, spiritID: spiritID, actionLog: actionLog}
 }
 
 func (t *RestTool) Name() string {
@@ -61,6 +62,7 @@ func (t *RestTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	}
 
 	if nearestDist > bedProximity {
+		t.actionLog.Add("rest", fmt.Sprintf("休憩しようとしたがベッドが遠い（最寄り: %s, %.1fm）", nearestHouse, nearestDist))
 		return fmt.Sprintf("【休憩失敗】ベッドの近くにいません（最寄り: %s, 距離%.1f）。まず家に move_to で移動してください。", nearestHouse, nearestDist), nil
 	}
 
@@ -70,5 +72,6 @@ func (t *RestTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		return "", fmt.Errorf("rest failed: %w", err)
 	}
 
+	t.actionLog.Add("rest", "ベッドで休憩を始めた")
 	return "【休憩開始】ベッドで休んでいます。体力と思考力が回復します。", nil
 }
