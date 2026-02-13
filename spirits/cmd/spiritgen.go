@@ -7,12 +7,31 @@ import (
 	"time"
 )
 
-// Plaza centers where spirits spawn around (2x2 grid).
-var plazaCenters = [][2]float64{
-	{0, 0},
-	{18, 0},
-	{0, 18},
-	{18, 18},
+// Spawn bounds (world-wide). Keep inside current playable extents.
+const (
+	spawnMinX = -72.0
+	spawnMaxX = 40.0
+	spawnMinZ = -85.0
+	spawnMaxZ = 60.0
+)
+
+// Exclude obvious non-walkable water zones.
+func isBlockedSpawn(x, z float64) bool {
+	// Fountain basin
+	if x*x+z*z <= 3.7*3.7 {
+		return true
+	}
+	// River: center (44,10), size 8x100
+	if x >= 40 && x <= 48 && z >= -40 && z <= 60 {
+		return true
+	}
+	// Lake: center (28,52), radius 12
+	dx := x - 28
+	dz := z - 52
+	if dx*dx+dz*dz <= 12*12 {
+		return true
+	}
+	return false
 }
 
 // Owner name pool (Japanese names).
@@ -94,10 +113,10 @@ func generateSpirits(count int, nameGen NameGenerator) []spiritConfig {
 // Each spirit gets unique intervals so they naturally drift apart over time.
 func generateTiming() spiritTiming {
 	return spiritTiming{
-		idleThink:   randDuration(17, 27),  // base 22s ± ~5s (was 45s)
-		activeThink: randDuration(6, 9),    // base 7s ± ~1.5s (was 15s)
-		convThink:   randDuration(2, 3),    // base 2.5s ± ~0.5s (was 4s)
-		restCheck:   randDuration(6, 9),    // base 7s ± ~1.5s (was 15s)
+		idleThink:   randDuration(17, 27), // base 22s ± ~5s (was 45s)
+		activeThink: randDuration(6, 9),   // base 7s ± ~1.5s (was 15s)
+		convThink:   randDuration(2, 3),   // base 2.5s ± ~0.5s (was 4s)
+		restCheck:   randDuration(6, 9),   // base 7s ± ~1.5s (was 15s)
 	}
 }
 
@@ -112,20 +131,24 @@ func generateColor(index, total int) string {
 	baseHue := float64(index) * 360.0 / float64(total)
 	offset := rand.Float64()*30 - 15 // ±15 degree jitter
 	hue := math.Mod(baseHue+offset+360, 360)
-	sat := 50 + rand.Float64()*20  // 50-70%
-	lit := 65 + rand.Float64()*10  // 65-75%
+	sat := 50 + rand.Float64()*20 // 50-70%
+	lit := 65 + rand.Float64()*10 // 65-75%
 	return hslToHex(hue, sat, lit)
 }
 
-// generatePosition distributes spirits around plaza centers.
-func generatePosition(index, total int) [3]float64 {
-	plaza := plazaCenters[index%len(plazaCenters)]
-	angle := 2 * math.Pi * float64(index) / float64(total)
-	angle += (rand.Float64() - 0.5) * 0.5 // small angular jitter
-	radius := 6 + rand.Float64()*6         // 6-12
-	x := plaza[0] + radius*math.Cos(angle)
-	z := plaza[1] + radius*math.Sin(angle)
-	return [3]float64{math.Round(x*10) / 10, 0, math.Round(z*10) / 10}
+// generatePosition distributes spirits uniformly across the whole world.
+func generatePosition(_, _ int) [3]float64 {
+	for i := 0; i < 128; i++ {
+		x := spawnMinX + rand.Float64()*(spawnMaxX-spawnMinX)
+		z := spawnMinZ + rand.Float64()*(spawnMaxZ-spawnMinZ)
+		if isBlockedSpawn(x, z) {
+			continue
+		}
+		return [3]float64{math.Round(x*10) / 10, 0, math.Round(z*10) / 10}
+	}
+
+	// Fallback (should be rare)
+	return [3]float64{0, 0, 0}
 }
 
 // generatePersona creates a persona string from random profile elements.

@@ -9,7 +9,7 @@ export interface TreesProps {
   trees: TreeProps[]
 }
 
-function Tree({
+export function Tree({
   position = [0, 0, 0],
   scale = 1,
   trunkColor = "#9b6e4c",

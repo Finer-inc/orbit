@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
@@ -85,6 +86,7 @@ func (r *rateLimitedProvider) GetDefaultModel() string {
 
 func main() {
 	godotenv.Load()
+	rand.Seed(time.Now().UnixNano())
 
 	// Select LLM provider
 	providerName := os.Getenv("LLM_PROVIDER")

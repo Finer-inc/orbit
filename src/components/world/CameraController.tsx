@@ -10,9 +10,6 @@ interface CameraControllerProps {
   mode: CameraMode
 }
 
-// 俯瞰モード: 南東上空からの固定方向
-const OVERHEAD_DIRECTION = new THREE.Vector3(0, 8, 12).normalize()
-
 // TPS モード: 精霊の背後オフセット（ローカル座標）
 const TPS_OFFSET = new THREE.Vector3(0, 3, -6)
 const TPS_LOOK_HEIGHT = 1.5
@@ -40,21 +37,14 @@ export default function CameraController({ targetPosition, targetRotationY, mode
 
   useFrame(() => {
     if (!controls) return
+    if (mode === 'overhead') return // 俯瞰モードはOrbitControlsに任せる
+
     const orbitControls = controls as unknown as OrbitControlsType
     if (!orbitControls.target) return
 
     const [tx, ty, tz] = targetPosition
 
-    if (mode === 'overhead') {
-      // 注視点: 精霊の少し上
-      targetVec.current.set(tx, ty + 1, tz)
-      orbitControls.target.lerp(targetVec.current, LERP_SPEED)
-
-      // カメラ位置: 方向は固定、距離はユーザー操作を尊重
-      const currentDist = camera.position.distanceTo(orbitControls.target)
-      cameraGoal.current.copy(OVERHEAD_DIRECTION).multiplyScalar(currentDist).add(targetVec.current)
-      camera.position.lerp(cameraGoal.current, LERP_SPEED)
-    } else {
+    {
       // 注視点は常に精霊に追従（位置だけは追う）
       targetVec.current.set(tx, ty + TPS_LOOK_HEIGHT, tz)
       orbitControls.target.lerp(targetVec.current, LERP_SPEED)

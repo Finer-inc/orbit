@@ -24,17 +24,17 @@ export function useCameraMode(spiritCount: number): CameraModeState {
     setMode((prev) => (prev === 'overhead' ? 'tps' : 'overhead'))
   }, [])
 
-  // A/D キーで精霊切替、V キーでモード切替
+  // A/D キーで精霊切替（TPSのみ）、V キーでモード切替
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // input/select にフォーカスがある場合は無視
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
 
-      if (e.key === 'a' || e.key === 'A') {
+      if ((e.key === 'a' || e.key === 'A') && mode === 'tps') {
         if (spiritCount === 0) return
         setSelectedIndex((prev) => (prev - 1 + spiritCount) % spiritCount)
-      } else if (e.key === 'd' || e.key === 'D') {
+      } else if ((e.key === 'd' || e.key === 'D') && mode === 'tps') {
         if (spiritCount === 0) return
         setSelectedIndex((prev) => (prev + 1) % spiritCount)
       } else if (e.key === 'v' || e.key === 'V') {
@@ -43,7 +43,7 @@ export function useCameraMode(spiritCount: number): CameraModeState {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [spiritCount, toggleMode])
+  }, [spiritCount, mode, toggleMode])
 
   return { mode, selectedIndex, toggleMode, setSelectedIndex }
 }

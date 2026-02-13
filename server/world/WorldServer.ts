@@ -11,6 +11,7 @@ import type {
   Volume,
 } from '../../src/types/world.ts'
 import { VOLUME_RANGE } from '../../src/types/world.ts'
+import { getTerrainHeight } from '../../src/utils/terrainHeight.ts'
 import { WorldClock } from './WorldClock.ts'
 import { createWorldMap } from './WorldMap.ts'
 import type { WorldMapData, BedInfo } from './WorldMap.ts'
@@ -58,10 +59,15 @@ export class WorldServer {
     color: string = '#e8b88a',
   ): SpiritState {
     const now = Date.now()
+    const groundedPosition: [number, number, number] = [
+      position[0],
+      getTerrainHeight(position[0], position[2]),
+      position[2],
+    ]
     const state: SpiritState = {
       id,
       name,
-      position,
+      position: groundedPosition,
       rotationY: 0,
       currentAction: null,
       lastThinkAt: now,
@@ -232,7 +238,11 @@ export class WorldServer {
     // Calculate rotation: atan2(dx, dz) matches THREE.js convention where 0 = +Z direction
     const newRotation = Math.atan2(dx, dz)
 
-    const newPosition: [number, number, number] = [finalX, spirit.position[1], finalZ]
+    const newPosition: [number, number, number] = [
+      finalX,
+      getTerrainHeight(finalX, finalZ),
+      finalZ,
+    ]
 
     spirit.position = newPosition
     spirit.rotationY = newRotation

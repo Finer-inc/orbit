@@ -1,43 +1,51 @@
-import { useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { WorldLayout } from '../layouts/WorldLayout'
 import { useWorldState } from '../hooks/useWorldState'
 import { useSpirits } from '../hooks/useSpirits'
 import { useCameraMode } from '../hooks/useCameraMode'
 import WorldEnvironment from '../components/world/WorldEnvironment'
-import Ground from '../components/world/Ground'
-import Fountain from '../components/world/Fountain'
-import House, { BED_LOCAL_OFFSET } from '../components/world/House'
-import Trees from '../components/world/Trees'
+import WorldGLB from '../components/world/WorldGLB'
+import LegacyWorldStage, { getLegacyBedPositions } from '../components/world/LegacyWorldStage'
 import Character from '../components/world/Character'
 import SpiritLabel from '../components/world/SpiritLabel'
-import StreetLight from '../components/world/StreetLight'
 import CameraController from '../components/world/CameraController'
 import CameraHUD from '../components/ui/CameraHUD'
 import { VOLUME_RANGE } from '../types/world'
 import { exportWorldGLB } from '../utils/worldExporter'
 
+const LEGACY_STAGE = import.meta.env.VITE_STAGE === 'legacy'
+
 const SPEECH_DISPLAY_DURATION = 10_000
-
-/** ベッドのローカル座標を家のワールド座標に変換 */
-function computeBedWorldPositions(
-  houses: { position: [number, number, number]; rotation: [number, number, number] }[],
-): [number, number][] {
-  return houses.map((h) => {
-    const cosR = Math.cos(h.rotation[1])
-    const sinR = Math.sin(h.rotation[1])
-    const wx = h.position[0] + BED_LOCAL_OFFSET[0] * cosR + BED_LOCAL_OFFSET[2] * sinR
-    const wz = h.position[2] + (-BED_LOCAL_OFFSET[0] * sinR + BED_LOCAL_OFFSET[2] * cosR)
-    return [wx, wz]
-  })
-}
-
 const BED_PROXIMITY = 2.0
 
+interface BedInfo {
+  houseId: string
+  position: [number, number, number]
+}
+
+function useBeds(): [number, number][] {
+  const [beds, setBeds] = useState<[number, number][]>(() =>
+    LEGACY_STAGE ? getLegacyBedPositions() : [],
+  )
+
+  useEffect(() => {
+    if (LEGACY_STAGE) return
+    fetch('/api/world/beds')
+      .then((r) => r.json())
+      .then((data: BedInfo[]) => {
+        setBeds(data.map((b) => [b.position[0], b.position[2]]))
+      })
+      .catch(console.error)
+  }, [])
+
+  return beds
+}
+
 export function WorldPage() {
-  const { timeOfDay, hour, houses, trees } = useWorldState()
+  const { timeOfDay, hour } = useWorldState()
   const hh = String(Math.floor(hour)).padStart(2, '0')
   const mm = String(Math.floor((hour % 1) * 60)).padStart(2, '0')
-  const bedPositions = useMemo(() => computeBedWorldPositions(houses), [houses])
+  const bedPositions = useBeds()
   const spirits = useSpirits()
   const { mode, selectedIndex, toggleMode, setSelectedIndex } = useCameraMode(spirits.length)
 
@@ -75,28 +83,12 @@ export function WorldPage() {
     </button>
     <WorldLayout>
       <WorldEnvironment timeOfDay={timeOfDay} />
-      <Ground />
-      <Fountain position={[0, 0, 0]} />
-      <Fountain position={[18, 0, 0]} />
-      <Fountain position={[0, 0, 18]} />
-      <Fountain position={[18, 0, 18]} />
-      {/* 街灯: 各広場の外円 */}
-      {([[0, 0, 'sw'], [18, 0, 'se'], [0, 18, 'nw'], [18, 18, 'ne']] as const).map(([cx, cz, tag]) =>
-        Array.from({ length: 8 }, (_, i) => {
-          const angle = (Math.PI / 8) + (Math.PI * 2 / 8) * i
-          return (
-            <StreetLight
-              key={`light-${tag}-${i}`}
-              position={[cx + Math.cos(angle) * 9, 0, cz + Math.sin(angle) * 9]}
-              timeOfDay={timeOfDay}
-            />
-          )
-        })
-      )}
-      {houses.map((house, i) => (
-        <House key={i} {...house} />
-      ))}
-      <Trees trees={trees} />
+      <group name="__world__">
+        {LEGACY_STAGE
+          ? <LegacyWorldStage timeOfDay={timeOfDay} />
+          : <WorldGLB />
+        }
+      </group>
       {spirits.map((spirit) => {
         const nearBed = spirit.state === 'resting' && bedPositions.some(([bx, bz]) => {
           const dx = spirit.position[0] - bx
@@ -128,7 +120,7 @@ export function WorldPage() {
           </Character>
         )
       })}
-      {selectedSpirit && (
+      {mode === 'tps' && selectedSpirit && (
         <CameraController
           targetPosition={selectedSpirit.position}
           targetRotationY={selectedSpirit.rotationY}
