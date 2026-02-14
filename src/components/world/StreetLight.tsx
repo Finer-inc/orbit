@@ -1,20 +1,16 @@
-import { useRef } from 'react'
 import type { TimeOfDay } from '../../types/world'
 
 interface StreetLightProps {
-  position: [number, number, number]
   timeOfDay: TimeOfDay
 }
 
-export default function StreetLight({ position, timeOfDay }: StreetLightProps) {
-  const lightRef = useRef(null)
-
+/** 街灯のビジュアルのみ（PointLightは親グループで管理） */
+export default function StreetLight({ timeOfDay }: StreetLightProps) {
   const isLit = timeOfDay === 'night' || timeOfDay === 'evening'
-  const intensity = timeOfDay === 'night' ? 8 : timeOfDay === 'evening' ? 3 : 0
   const emissiveIntensity = isLit ? 1 : 0
 
   return (
-    <group position={position}>
+    <group>
       {/* ポール: 細い円柱 */}
       <mesh position={[0, 1.5, 0]}>
         <cylinderGeometry args={[0.05, 0.05, 3, 8]} />
@@ -30,18 +26,6 @@ export default function StreetLight({ position, timeOfDay }: StreetLightProps) {
           emissiveIntensity={emissiveIntensity}
         />
       </mesh>
-
-      {/* PointLight: 点灯時のみ */}
-      {intensity > 0 && (
-        <pointLight
-          ref={lightRef}
-          position={[0, 3.0, 0]}
-          color="#ffcc66"
-          intensity={intensity}
-          distance={15}
-          decay={2}
-        />
-      )}
     </group>
   )
 }

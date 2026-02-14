@@ -1,7 +1,7 @@
 # Seirei アーキテクチャ設計
 
 > 作成日: 2026-02-10
-> 最終更新: 2026-02-13
+> 最終更新: 2026-02-14
 
 ---
 
@@ -46,10 +46,11 @@
 └──────────────────── ↕ WebSocket/REST ────────────┘
 ┌──────── ワールドサーバー (TypeScript) ──────────┐
 │ server/api.ts — Hono HTTP API (port 3001)        │
-│ ├── ロケーション管理（座標 + BBox）              │
+│ ├── ロケーション管理（GLBからcol_*ノード自動取得）│
 │ ├── 視界計算（純粋数学、GPU不要）                │
 │ ├── 遭遇判定（距離ベース）                       │
-│ ├── 時間システム（朝昼夕夜サイクル）             │
+│ ├── 地形高さ（GLBメッシュ三角形レイキャスト）    │
+│ ├── 時間システム（DAY_LENGTH_MINUTES環境変数で速度制御）│
 │ └── REST API（Viteプロキシ /api → localhost:3001）│
 │                                                  │
 │ 認証: X (Twitter) OAuth                          │
@@ -183,6 +184,12 @@ Go移植しない理由:
 - ワールドサーバーのロジック（視界計算、WorldMap、WorldClock等）は既にTypeScriptで完成・テスト済み
 - Go移植は工数に見合わない（ワールドロジックの再実装 + テスト + バグ修正）
 
+#### ワールドデータのソース
+ワールドのオブジェクト配置と地形はGLBファイル（`public/worlds/seirei-world.glb`）から読み込む。Blenderでステージを編集すればサーバー・フロントエンド両方に自動反映される。
+- `server/world/parseGLB.ts` — GLBバイナリパーサー（JSONチャンク + BINチャンクを読み込み）
+- `col_*` ノードからオブジェクト配置（位置、回転、AABB）を取得
+- `vis_terrain` メッシュから三角形ベースの地形高さクエリを構築（2Dグリッドではなく実メッシュでレイキャスト。`getHeight(x, z, fromY?)` でfromY以下の最も高い面を返すため、橋の下や洞窟にも対応）
+
 ### 3.4 WebSocket/REST API
 
 フロントエンド向けのリアルタイム配信。
@@ -214,6 +221,15 @@ spirits/                            ← Go module
 ├── sessions/                       ← PicoClaw SessionManagerによる自動永続化 (gitignored)
 ├── go.mod                          ← picoclaw/ を replace directive で参照
 └── .env                            ← GLM_API_KEY or ANTHROPIC_API_KEY (gitignored)
+```
+
+```
+server/world/                        ← TS World Server
+├── WorldServer.ts                    ← ワールド状態管理の中核
+├── WorldMap.ts                       ← GLBからオブジェクト・ベッド・地形高さを構築
+├── WorldClock.ts                     ← DAY_LENGTH_MINUTES環境変数で速度制御
+├── parseGLB.ts                       ← GLBバイナリパーサー（col_*抽出 + 三角形地形メッシュ）
+└── vision.ts                         ← Frustum Culling + screenOccupancy
 ```
 
 PicoClaw改造箇所 (picoclaw/):
@@ -290,6 +306,9 @@ cd spirits && go build -o seirei-spirit ./cmd && ./seirei-spirit
 | ★3.5 | 自律ループ + 複数精霊 | **完了** | SPIRIT_COUNT環境変数で精霊数を指定（デフォルト5体）。自動名前生成・人格生成・色生成。goroutineで並行自律行動 |
 | ★4 | ワールドサーバー | **HTTP API完了** | TS維持確定 (Hono)。Go精霊からHTTP localhostで呼び出し |
 | ★5 | フロントエンド表示 | **完了** | あつ森風カメラ + ポーリング + 精霊描画 + 名前/吹き出し |
-| ★5.5 | 動的人格生成 | **完了** | 精霊ごとに持ち主プロフィール・興味・性格をランダム生成。X風人格設定 |
+| ★5.5 | 動的人格生成 | **完了** | 精霊ごとに持ち主プロフィール・興味・性格をランダム生成 |
+| ★5.6 | GLBワールド読み込み | **完了** | Blenderで作ったGLBをサーバー・フロントで読み込み。オブジェクト配置・地形高さをGLBから取得 |
+| ★5.7 | 時間帯システム改善 | **完了** | DAY_LENGTH_MINUTES環境変数、フロントエンド同期、リアルタイム空・fog更新 |
+| ★5.8 | GLBライト制御 | **完了** | KHR_lights_punctual対応。StreetLight等のPointLightを時間帯で制御 |
 | ★6 | Supabase永続化 | 未着手 | セッション・会話ログの永続化 |
 | ★7 | X OAuth + 人格生成 | 未着手 | Xプロフィールから精霊を自動生成 |

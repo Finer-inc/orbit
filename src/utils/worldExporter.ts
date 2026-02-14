@@ -114,6 +114,13 @@ function mergeVisGroups(root: THREE.Object3D): void {
 
     const merged = mergeGeometries(geos)
     if (!merged) continue
+
+    // Vertices are in world space; transform back to parent's local space
+    // so they render correctly when placed under the parent's transform.
+    parent.updateWorldMatrix(true, false)
+    const parentWorldInverse = new THREE.Matrix4().copy(parent.matrixWorld).invert()
+    merged.applyMatrix4(parentWorldInverse)
+
     merged.computeVertexNormals()
 
     const result = new THREE.Mesh(

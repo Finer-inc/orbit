@@ -96,7 +96,7 @@ export function startApiServer(world: WorldServer): void {
   // --- World info ---
 
   app.get('/api/world/time', (c) => {
-    return c.json({ timeOfDay: world.getTimeOfDay(), hour: world.getHour() })
+    return c.json({ timeOfDay: world.getTimeOfDay(), hour: world.getHour(), timeScale: world.getTimeScale() })
   })
 
   app.get('/api/world/beds', (c) => {

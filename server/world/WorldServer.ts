@@ -11,9 +11,7 @@ import type {
   Volume,
 } from '../../src/types/world.ts'
 import { VOLUME_RANGE } from '../../src/types/world.ts'
-import { getTerrainHeight } from '../../src/utils/terrainHeight.ts'
 import { WorldClock } from './WorldClock.ts'
-import { createWorldMap } from './WorldMap.ts'
 import type { WorldMapData, BedInfo } from './WorldMap.ts'
 import { computeVisibleObjects } from './vision.ts'
 
@@ -32,9 +30,9 @@ export class WorldServer {
   private spatialMessages: SpatialMessage[]
   private lastObserveAt: Map<string, number>
 
-  constructor() {
+  constructor(map: WorldMapData) {
     this.clock = new WorldClock()
-    this.map = createWorldMap()
+    this.map = map
     this.spirits = new Map()
     this.spatialMessages = []
     this.lastObserveAt = new Map()
@@ -50,6 +48,10 @@ export class WorldServer {
     return this.clock.getHour()
   }
 
+  getTimeScale(): number {
+    return this.clock.getTimeScale()
+  }
+
   // --- Spirit management ---
 
   registerSpirit(
@@ -61,7 +63,7 @@ export class WorldServer {
     const now = Date.now()
     const groundedPosition: [number, number, number] = [
       position[0],
-      getTerrainHeight(position[0], position[2]),
+      this.map.heightMap.getHeight(position[0], position[2]),
       position[2],
     ]
     const state: SpiritState = {
@@ -240,7 +242,7 @@ export class WorldServer {
 
     const newPosition: [number, number, number] = [
       finalX,
-      getTerrainHeight(finalX, finalZ),
+      this.map.heightMap.getHeight(finalX, finalZ, spirit.position[1]),
       finalZ,
     ]
 

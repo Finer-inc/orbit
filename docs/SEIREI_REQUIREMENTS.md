@@ -416,6 +416,11 @@ Spirit Instances（独立プロセス）
 | 短期記憶 (ActionLog) | 直近30件の行動をリングバッファで保持。LLMプロンプトに含めて文脈を維持 |
 | 時計表示 + クライアント補間 | サーバー時刻を30秒ポーリング + クライアント側で1秒tick補間。右上に時刻表示 |
 | 視野角150°に拡大 | オブジェクト・精霊の視野を90°から150°に拡大 |
+| GLBワールド読み込み | GLBファイルを唯一のワールドデータソースに。`parseGLB.ts`でcol_*ノードからオブジェクト配置、vis_terrainメッシュから三角形ベース地形高さを取得。Blender編集が自動反映 |
+| 全オブジェクトグループ化 | LegacyWorldStageで噴水・家・木・街灯を全て`<group name="type_N">`にグループ化。GLBエクスポート時にvis_*/col_*/light_*が正しく構造化される |
+| 時間帯システム改善 | DAY_LENGTH_MINUTES環境変数で昼夜サイクル速度制御。サーバーからtimeScale配信。フロントエンドで1秒tickリアルタイム補間（空・fog・ライト即時反映） |
+| GLBライト制御 | KHR_lights_punctual拡張でPointLightをGLBに保存。WorldGLBコンポーネントでtimeOfDayに応じたライト強度制御 |
+| 三角形メッシュ地形高さ | vis_terrainの51,200三角形を2D空間グリッドでインデックス化。重心座標補間で正確な地形高さを取得。`getHeight(x,z,fromY?)`でfromY以下の最も高い面を返し、橋の下・洞窟に対応 |
 
 ### 技術スタック変更
 
@@ -441,7 +446,7 @@ TS実装（`server/`）はプロトタイプ/参考実装として残す。
 ### 方針メモ
 
 - 面白さの検証フェーズは設けない。**作りながら面白くする**（試行錯誤アプローチ）
-- ステージデータは現状ハードコードだが変更可能。動的切り替えは必要になった時点で対応
+- ステージデータはGLBファイル（`public/worlds/seirei-world.glb`）から読み込み。Blenderで編集→エクスポートすればサーバー・フロント両方に反映
 - ワールドサーバーはTypeScriptのまま。Go移植は不要（1000体@5分間隔 = ~3.3 req/sec、HTTP localhostで十分）
 - PicoClawを最小限改造（2ファイル）してAgentLoop・SessionManager・文脈圧縮をそのまま利用。`NewCustomLoop()`で外部ツール・システムプロンプトを注入
 - Anthropic APIはPicoClawのHTTPProvider（OpenAI互換のみ）では使えないため、独自AnthropicProviderを実装

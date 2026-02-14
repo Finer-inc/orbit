@@ -6,9 +6,12 @@ export type { TimeOfDay }
 const TIME_POLL_INTERVAL = 30_000
 const CLOCK_TICK_INTERVAL = 1_000
 
-/** ゲーム内1日の実時間（分）— サーバーの DAY_LENGTH_MINUTES と合わせる */
-const DAY_LENGTH_MINUTES = 24
-const TIME_SCALE = (24 * 60) / DAY_LENGTH_MINUTES
+function hourToTimeOfDay(hour: number): TimeOfDay {
+  if (hour >= 6 && hour < 10) return 'morning'
+  if (hour >= 10 && hour < 17) return 'day'
+  if (hour >= 17 && hour < 20) return 'evening'
+  return 'night'
+}
 
 export interface WorldState {
   timeOfDay: TimeOfDay
@@ -16,9 +19,9 @@ export interface WorldState {
 }
 
 export function useWorldState(): WorldState {
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day')
   const [hour, setHour] = useState(12)
-  const syncRef = useRef<{ serverHour: number; fetchedAt: number } | null>(null)
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day')
+  const syncRef = useRef<{ serverHour: number; fetchedAt: number; timeScale: number } | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval>>()
   const clockRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -27,10 +30,10 @@ export function useWorldState(): WorldState {
       try {
         const res = await fetch('/api/world/time')
         if (res.ok) {
-          const data: { timeOfDay: TimeOfDay; hour: number } = await res.json()
-          setTimeOfDay(data.timeOfDay)
-          syncRef.current = { serverHour: data.hour, fetchedAt: Date.now() }
+          const data: { timeOfDay: TimeOfDay; hour: number; timeScale: number } = await res.json()
+          syncRef.current = { serverHour: data.hour, fetchedAt: Date.now(), timeScale: data.timeScale }
           setHour(data.hour)
+          setTimeOfDay(data.timeOfDay)
         }
       } catch {
         // Server not available yet
@@ -43,8 +46,9 @@ export function useWorldState(): WorldState {
     clockRef.current = setInterval(() => {
       if (!syncRef.current) return
       const elapsed = (Date.now() - syncRef.current.fetchedAt) / 3600000
-      const h = (syncRef.current.serverHour + elapsed * TIME_SCALE) % 24
+      const h = (syncRef.current.serverHour + elapsed * syncRef.current.timeScale) % 24
       setHour(h)
+      setTimeOfDay(hourToTimeOfDay(h))
     }, CLOCK_TICK_INTERVAL)
 
     return () => {

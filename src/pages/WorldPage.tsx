@@ -86,7 +86,7 @@ export function WorldPage() {
       <group name="__world__">
         {LEGACY_STAGE
           ? <LegacyWorldStage timeOfDay={timeOfDay} />
-          : <WorldGLB />
+          : <WorldGLB timeOfDay={timeOfDay} />
         }
       </group>
       {spirits.map((spirit) => {

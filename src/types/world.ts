@@ -2,7 +2,7 @@
 
 export type TimeOfDay = 'morning' | 'day' | 'evening' | 'night'
 
-export type WorldObjectType = 'fountain' | 'house' | 'tree'
+export type WorldObjectType = string
 
 export interface WorldObjectEntry {
   id: string

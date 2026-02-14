@@ -1,6 +1,6 @@
 # Seirei World API Reference
 
-> 最終更新: 2026-02-10
+> 最終更新: 2026-02-14
 
 ---
 
@@ -20,7 +20,7 @@
 
 - **右手座標系** (THREE.js 標準)
 - X: 左右 (正=右)
-- Y: 上下 (正=上) — 地面 = 0、**キャラクターは常に Y=0 に固定**
+- Y: 上下 (正=上) — 地形メッシュ（vis_terrain）から三角形レイキャストで算出。スポーン時は最も高い面、移動時は現在Y以下の最も高い面に着地（橋の下・洞窟にも対応）
 - Z: 前後 (正=手前)
 - **rotationY**: Y軸周りの回転（ラジアン）。0 = +Z方向、π/2 = +X方向
 
@@ -114,7 +114,7 @@ window.__seirei.vision.getVisibleObjects()
 | フィールド | 型 | 説明 |
 |---|---|---|
 | `id` | `string` | オブジェクトID (例: `"fountain-0"`, `"house-1"`, `"tree-3"`) |
-| `type` | `"fountain" \| "house" \| "tree"` | オブジェクト種別 |
+| `type` | `"fountain" \| "house" \| "tree" \| "streetlight"` | オブジェクト種別 |
 | `position` | `[x, y, z]` | ワールド座標での位置 |
 | `distance` | `number` | キャラクターの目からの距離（ユニット） |
 | `screenOccupancy` | `number` | 視野内のスクリーン占有率 (0.0〜1.0)。0.1 = 視野の10% |
@@ -136,7 +136,7 @@ GET /api/spirits → SpiritState[]
 
 ### 時間帯（30秒間隔）
 ```
-GET /api/world/time → { timeOfDay, hour }
+GET /api/world/time → { timeOfDay, hour, timeScale }
 ```
 
 ### SpiritState（フロントエンド用フィールド）
@@ -328,8 +328,9 @@ Response: { "success": boolean, "hearers": number }
 #### 時間帯
 ```
 GET /api/world/time
-Response: { "timeOfDay": string, "hour": number }
+Response: { "timeOfDay": string, "hour": number, "timeScale": number }
 ```
+`timeScale`はゲーム内1秒あたりの実時間秒数。`DAY_LENGTH_MINUTES`環境変数で制御。
 
 #### オブジェクト一覧
 ```
@@ -367,28 +368,17 @@ Response: BedInfo[]
 
 ## ワールドオブジェクト一覧
 
-### 噴水 (fountain) — 4基
-| ID | 位置 |
-|---|---|
-| `fountain-0` | `[0, 0, 0]` |
-| `fountain-1` | `[18, 0, 0]` |
-| `fountain-2` | `[0, 0, 18]` |
-| `fountain-3` | `[18, 0, 18]` |
+ワールドオブジェクトはGLBファイル（`public/worlds/seirei-world.glb`）の`col_*`ノードから自動取得される。Blenderでステージを編集すれば自動的に反映される。
 
-### 家 (house) — 8棟
-| ID | 位置 | 回転Y |
+### オブジェクトタイプ
+| type | 説明 | コリジョン |
 |---|---|---|
-| `house-0` | `[-10, 0, -5]` | π/4 |
-| `house-1` | `[-10, 0, 6]` | -π/6 |
-| `house-2` | `[28, 0, -5]` | -π/4 |
-| `house-3` | `[28, 0, 6]` | π/6 |
-| `house-4` | `[-10, 0, 13]` | π/4 |
-| `house-5` | `[-10, 0, 24]` | -π/6 |
-| `house-6` | `[28, 0, 13]` | -π/4 |
-| `house-7` | `[28, 0, 24]` | π/6 |
+| `fountain` | 噴水 | ブロック |
+| `house` | 家（ベッド付き） | 通過可能（精霊は家に入れる） |
+| `tree` | 木 | ブロック |
+| `streetlight` | 街灯 | ブロック |
 
-### 木 (tree) — 25本
-`tree-0` 〜 `tree-24`。4つの広場周辺に分散配置。
+オブジェクトIDは `{type}-{index}` 形式（例: `house-3`, `tree-12`）。GLBの`col_{type}_{index}`ノード名から生成される。
 
 ---
 

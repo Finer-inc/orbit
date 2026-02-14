@@ -1,4 +1,6 @@
+import path from 'node:path'
 import { WorldServer } from './world/WorldServer.ts'
+import { createWorldMapFromGLB } from './world/WorldMap.ts'
 import { SpiritRuntime } from './spirit/SpiritRuntime.ts'
 import { createConsoleLogger } from './cli/logger.ts'
 import { startApiServer } from './api.ts'
@@ -8,8 +10,12 @@ async function main(): Promise<void> {
 
   logger.worldEvent('Seirei World Server 起動中...')
 
-  const world = new WorldServer()
+  const glbPath = path.join(import.meta.dirname!, '..', 'public', 'worlds', 'seirei-world.glb')
+  const map = createWorldMapFromGLB(glbPath)
+  const world = new WorldServer(map)
   logger.worldEvent(`ワールド初期化完了: ${world.getAllObjects().length}個のオブジェクト`)
+  const dayLen = process.env.DAY_LENGTH_MINUTES
+  logger.worldEvent(`1日の長さ: ${dayLen ?? '24'}分${dayLen ? '' : ' (デフォルト)'}`)
   logger.worldEvent(`現在の時間帯: ${world.getTimeOfDay()}`)
 
   // HTTP API サーバー起動

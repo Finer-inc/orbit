@@ -1,4 +1,3 @@
-import { Fragment } from 'react'
 import Ground from './Ground'
 import Fountain from './Fountain'
 import House, { BED_LOCAL_OFFSET } from './House'
@@ -110,6 +109,7 @@ export function getLegacyBedPositions(): [number, number][] {
 
 export default function LegacyWorldStage({ timeOfDay }: LegacyWorldStageProps) {
   let lightIdx = 0
+  const lightIntensity = timeOfDay === 'night' ? 8 : timeOfDay === 'evening' ? 3 : 0
 
   return (
     <>
@@ -120,19 +120,19 @@ export default function LegacyWorldStage({ timeOfDay }: LegacyWorldStageProps) {
 
       {/* ===== Fountains ===== */}
       {FOUNTAIN_POSITIONS.map((pos, i) => (
-        <Fragment key={`fountain-${i}`}>
+        <group key={`fountain-${i}`} name={`fountain_${i}`} position={pos}>
           <group name={`vis_fountain_${i}`}>
-            <Fountain position={pos} />
+            <Fountain />
           </group>
           <mesh
             name={`col_fountain_${i}`}
-            position={[pos[0], pos[1] + FOUNTAIN_COL_H / 2, pos[2]]}
+            position={[0, FOUNTAIN_COL_H / 2, 0]}
             visible={false}
           >
             <cylinderGeometry args={[FOUNTAIN_COL_R, FOUNTAIN_COL_R, FOUNTAIN_COL_H, 8]} />
             <meshStandardMaterial color="#888" transparent opacity={0.4} />
           </mesh>
-        </Fragment>
+        </group>
       ))}
 
       {/* ===== Street Lights ===== */}
@@ -143,39 +143,46 @@ export default function LegacyWorldStage({ timeOfDay }: LegacyWorldStageProps) {
           const z = cz + Math.sin(angle) * 9
           const idx = lightIdx++
           return (
-            <Fragment key={`light-${tag}-${i}`}>
+            <group key={`light-${tag}-${i}`} name={`streetlight_${idx}`} position={[x, 0, z]}>
               <group name={`vis_streetlight_${idx}`}>
-                <StreetLight position={[x, 0, z]} timeOfDay={timeOfDay} />
+                <StreetLight timeOfDay={timeOfDay} />
               </group>
               <mesh
                 name={`col_streetlight_${idx}`}
-                position={[x, LIGHT_COL_H / 2, z]}
+                position={[0, LIGHT_COL_H / 2, 0]}
                 visible={false}
               >
                 <cylinderGeometry args={[LIGHT_COL_R, LIGHT_COL_R, LIGHT_COL_H, 4]} />
                 <meshStandardMaterial color="#888" transparent opacity={0.4} />
               </mesh>
-            </Fragment>
+              <pointLight
+                name={`light_streetlight_${idx}`}
+                position={[0, 3.0, 0]}
+                color="#ffcc66"
+                intensity={lightIntensity}
+                distance={15}
+                decay={2}
+              />
+            </group>
           )
         })
       )}
 
       {/* ===== Houses ===== */}
       {HOUSES.map((house, i) => (
-        <Fragment key={`house-${i}`}>
+        <group key={`house-${i}`} name={`house_${i}`} position={house.position} rotation={house.rotation}>
           <group name={`vis_house_${i}`}>
-            <House {...house} />
+            <House wallColor={house.wallColor} roofColor={house.roofColor} />
           </group>
           <mesh
             name={`col_house_${i}`}
-            position={[house.position[0], house.position[1] + HOUSE_COL_Y, house.position[2]]}
-            rotation={house.rotation}
+            position={[0, HOUSE_COL_Y, 0]}
             visible={false}
           >
             <boxGeometry args={HOUSE_COL} />
             <meshStandardMaterial color="#888" transparent opacity={0.4} />
           </mesh>
-        </Fragment>
+        </group>
       ))}
 
       {/* ===== Trees ===== */}
@@ -183,19 +190,19 @@ export default function LegacyWorldStage({ timeOfDay }: LegacyWorldStageProps) {
         const s = tree.scale ?? 1
         const h = TREE_COL_H * s
         return (
-          <Fragment key={`tree-${i}`}>
+          <group key={`tree-${i}`} name={`tree_${i}`} position={tree.position}>
             <group name={`vis_tree_${i}`}>
-              <Tree {...tree} />
+              <Tree scale={s} />
             </group>
             <mesh
               name={`col_tree_${i}`}
-              position={[tree.position[0], tree.position[1] + h / 2, tree.position[2]]}
+              position={[0, h / 2, 0]}
               visible={false}
             >
               <cylinderGeometry args={[TREE_COL_R * s, TREE_COL_R * s, h, 6]} />
               <meshStandardMaterial color="#888" transparent opacity={0.4} />
             </mesh>
-          </Fragment>
+          </group>
         )
       })}
     </>
