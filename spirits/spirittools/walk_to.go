@@ -25,7 +25,7 @@ func (t *WalkToTool) Name() string {
 }
 
 func (t *WalkToTool) Description() string {
-	return "指定した座標に歩いて移動する。精霊の位置やオブジェクトの位置など、任意の座標に使える。相手の1.5m手前で自動的に止まる。"
+	return "指定した座標に向かって歩き始める。移動はサーバーが自動で進めるので、歩いている間も考えたり話したりできる。相手の1.5m手前で自動的に止まる。"
 }
 
 func (t *WalkToTool) Parameters() map[string]interface{} {
@@ -55,7 +55,7 @@ func (t *WalkToTool) Execute(ctx context.Context, args map[string]interface{}) (
 		return "エラー: z座標を数値で指定してください", nil
 	}
 
-	// Get current position to stop short of target
+	// Get current position to calculate stop distance
 	me, err := t.client.GetSpirit(t.spiritID)
 	if err != nil {
 		return "", fmt.Errorf("get spirit failed: %w", err)
@@ -65,6 +65,7 @@ func (t *WalkToTool) Execute(ctx context.Context, args map[string]interface{}) (
 	dz := targetZ - me.Position[2]
 	dist := math.Sqrt(dx*dx + dz*dz)
 
+	// Stop 1.5m short of target
 	finalX, finalZ := targetX, targetZ
 	if dist > stopDistance {
 		ratio := (dist - stopDistance) / dist
@@ -72,19 +73,21 @@ func (t *WalkToTool) Execute(ctx context.Context, args map[string]interface{}) (
 		finalZ = me.Position[2] + dz*ratio
 	}
 
-	result, err := t.client.Move(t.spiritID, finalX, finalZ)
+	result, err := t.client.Walk(t.spiritID, finalX, finalZ)
 	if err != nil {
 		return "", fmt.Errorf("walk failed: %w", err)
 	}
 
 	if !result.Success {
-		return "移動に失敗しました", nil
+		return "移動の開始に失敗しました", nil
 	}
 
-	t.actionLog.Add("walk_to", fmt.Sprintf("[%.1f, %.1f]に向かって歩いた → [%.1f, %.1f]", targetX, targetZ, result.NewPosition[0], result.NewPosition[2]))
+	estimatedTime := dist / 2.0 // 2m/s
 
-	return fmt.Sprintf("【移動完了】目標[%.1f, %.1f]の近くに移動しました。現在位置: [%.1f, %.1f, %.1f]",
-		targetX, targetZ, result.NewPosition[0], result.NewPosition[1], result.NewPosition[2]), nil
+	t.actionLog.Add("walk_to", fmt.Sprintf("[%.1f, %.1f]に向かって歩き始めた", targetX, targetZ))
+
+	return fmt.Sprintf("【移動開始】[%.1f, %.1f]に向かって歩き始めました。到着まで約%.0f秒。移動中も他のことができます。",
+		targetX, targetZ, estimatedTime), nil
 }
 
 func toFloat64(v interface{}) (float64, bool) {

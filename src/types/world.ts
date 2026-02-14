@@ -61,6 +61,9 @@ export interface SpiritState {
   staminaUpdatedAt: number
   mentalEnergy: number
   maxMentalEnergy: number
+  // 連続移動
+  movingTo?: [number, number] | null
+  moveSpeed?: number
 }
 
 export interface NearbySpiritInfo {

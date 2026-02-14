@@ -38,6 +38,9 @@ type SpiritState struct {
 	MaxStamina      float64 `json:"maxStamina"`
 	MentalEnergy    float64 `json:"mentalEnergy"`
 	MaxMentalEnergy float64 `json:"maxMentalEnergy"`
+	// Continuous movement
+	MovingTo  *[2]float64 `json:"movingTo,omitempty"`
+	MoveSpeed float64     `json:"moveSpeed,omitempty"`
 }
 
 type VisibleObject struct {
@@ -82,6 +85,16 @@ type MoveResult struct {
 	Success     bool       `json:"success"`
 	NewPosition [3]float64 `json:"newPosition"`
 	NewRotation float64    `json:"newRotation"`
+}
+
+type WalkResult struct {
+	Success  bool        `json:"success"`
+	MovingTo *[2]float64 `json:"movingTo"`
+}
+
+type StopResult struct {
+	Success  bool       `json:"success"`
+	Position [3]float64 `json:"position"`
 }
 
 type BedInfo struct {
@@ -160,6 +173,26 @@ func (c *Client) Say(spiritID, message, volume string, to string) (*SayResult, e
 	}
 	var result SayResult
 	if err := c.post(fmt.Sprintf("/api/spirits/%s/say", spiritID), body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) Walk(spiritID string, targetX, targetZ float64) (*WalkResult, error) {
+	body := map[string]interface{}{
+		"targetX": targetX,
+		"targetZ": targetZ,
+	}
+	var result WalkResult
+	if err := c.post(fmt.Sprintf("/api/spirits/%s/walk", spiritID), body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) Stop(spiritID string) (*StopResult, error) {
+	var result StopResult
+	if err := c.post(fmt.Sprintf("/api/spirits/%s/stop", spiritID), nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

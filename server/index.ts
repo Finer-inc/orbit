@@ -18,6 +18,9 @@ async function main(): Promise<void> {
   logger.worldEvent(`1日の長さ: ${dayLen ?? '24'}分${dayLen ? '' : ' (デフォルト)'}`)
   logger.worldEvent(`現在の時間帯: ${world.getTimeOfDay()}`)
 
+  // 移動ティックループ開始
+  world.startMovementTick()
+
   // HTTP API サーバー起動
   startApiServer(world)
 
@@ -41,6 +44,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => {
     logger.worldEvent('シャットダウン中...')
     clearInterval(statusInterval)
+    world.stopMovementTick()
     runtime.stop()
     process.exit(0)
   })

@@ -23,7 +23,7 @@ func (t *MoveToTool) Name() string {
 }
 
 func (t *MoveToTool) Description() string {
-	return "指定したオブジェクトの場所に移動する。observeで見えたオブジェクトのIDを指定する。"
+	return "指定したオブジェクトの場所に向かって歩き始める。observeで見えたオブジェクトのIDを指定する。"
 }
 
 func (t *MoveToTool) Parameters() map[string]interface{} {
@@ -51,28 +51,28 @@ func (t *MoveToTool) Execute(ctx context.Context, args map[string]interface{}) (
 		return fmt.Sprintf("エラー: オブジェクト「%s」が見つかりません", target), nil
 	}
 
-	targetX := obj.Position[0]
-	targetZ := obj.Position[2]
-
-	// Move spirit
-	result, err := t.client.Move(t.spiritID, targetX, targetZ)
+	// Start walking to object
+	result, err := t.client.Walk(t.spiritID, obj.Position[0], obj.Position[2])
 	if err != nil {
-		return "", fmt.Errorf("move failed: %w", err)
+		return "", fmt.Errorf("walk failed: %w", err)
 	}
 
 	if !result.Success {
-		return "移動に失敗しました", nil
+		return "移動の開始に失敗しました", nil
 	}
 
-	// Calculate distance moved from previous position (approximate from result)
-	dist := math.Sqrt(
-		math.Pow(result.NewPosition[0]-targetX, 2) +
-			math.Pow(result.NewPosition[2]-targetZ, 2),
-	)
-	_ = dist
+	// Estimate time
+	me, _ := t.client.GetSpirit(t.spiritID)
+	var estimatedTime float64
+	if me != nil {
+		dx := obj.Position[0] - me.Position[0]
+		dz := obj.Position[2] - me.Position[2]
+		dist := math.Sqrt(dx*dx + dz*dz)
+		estimatedTime = dist / 2.0
+	}
 
-	t.actionLog.Add("move_to", fmt.Sprintf("%s（%s）の近くに移動した → [%.1f, %.1f]", target, obj.Type, result.NewPosition[0], result.NewPosition[2]))
+	t.actionLog.Add("move_to", fmt.Sprintf("%s（%s）に向かって歩き始めた", target, obj.Type))
 
-	return fmt.Sprintf("【移動完了】%s（%s）の近くに移動しました。現在位置: [%.1f, %.1f, %.1f]",
-		target, obj.Type, result.NewPosition[0], result.NewPosition[1], result.NewPosition[2]), nil
+	return fmt.Sprintf("【移動開始】%s（%s）に向かって歩き始めました。到着まで約%.0f秒。移動中も他のことができます。",
+		target, obj.Type, estimatedTime), nil
 }

@@ -51,6 +51,20 @@ export function startApiServer(world: WorldServer): void {
     return c.json(result)
   })
 
+  app.post('/api/spirits/:id/walk', async (c) => {
+    const { targetX, targetZ } = await c.req.json<{
+      targetX: number
+      targetZ: number
+    }>()
+    const result = world.walkTo(c.req.param('id'), targetX, targetZ)
+    return c.json(result)
+  })
+
+  app.post('/api/spirits/:id/stop', (c) => {
+    const result = world.stopWalking(c.req.param('id'))
+    return c.json(result)
+  })
+
   app.post('/api/spirits/:id/look_at', async (c) => {
     const { targetX, targetZ } = await c.req.json<{
       targetX: number

@@ -23,12 +23,20 @@ const RESTING_RECOVERY_MULTIPLIER = 2.0
 const DEFAULT_MAX_STAMINA = 200
 const DEFAULT_MAX_MENTAL_ENERGY = 100
 
+// Continuous movement
+const MOVE_TICK_MS = 200
+const DEFAULT_MOVE_SPEED = 2.0
+const ARRIVAL_THRESHOLD = 0.3
+const SPIRIT_RADIUS = 0.4
+const MIN_SPIRIT_DISTANCE = 1.5
+
 export class WorldServer {
   private clock: WorldClock
   private map: WorldMapData
   private spirits: Map<string, SpiritState>
   private spatialMessages: SpatialMessage[]
   private lastObserveAt: Map<string, number>
+  private movementTickId: ReturnType<typeof setInterval> | null = null
 
   constructor(map: WorldMapData) {
     this.clock = new WorldClock()
@@ -80,6 +88,8 @@ export class WorldServer {
       staminaUpdatedAt: now,
       mentalEnergy: DEFAULT_MAX_MENTAL_ENERGY,
       maxMentalEnergy: DEFAULT_MAX_MENTAL_ENERGY,
+      movingTo: null,
+      moveSpeed: DEFAULT_MOVE_SPEED,
     }
     this.spirits.set(id, state)
     return state
@@ -150,7 +160,223 @@ export class WorldServer {
     return this.map.beds
   }
 
-  // --- Spirit actions ---
+  // --- Collision helpers ---
+
+  /** Clamp position to world bounds */
+  private clampToBounds(x: number, z: number): [number, number] {
+    const { bounds } = this.map
+    return [
+      Math.max(bounds.minX + SPIRIT_RADIUS, Math.min(bounds.maxX - SPIRIT_RADIUS, x)),
+      Math.max(bounds.minZ + SPIRIT_RADIUS, Math.min(bounds.maxZ - SPIRIT_RADIUS, z)),
+    ]
+  }
+
+  /** Check if position is inside any non-house object AABB. Returns the colliding object or null. */
+  private findObjectCollision(x: number, z: number): WorldObjectEntry | null {
+    for (const obj of this.map.objects) {
+      if (obj.type === 'house') continue
+      const bb = obj.boundingBox
+      const padMinX = bb.min[0] - SPIRIT_RADIUS
+      const padMaxX = bb.max[0] + SPIRIT_RADIUS
+      const padMinZ = bb.min[2] - SPIRIT_RADIUS
+      const padMaxZ = bb.max[2] + SPIRIT_RADIUS
+      if (x > padMinX && x < padMaxX && z > padMinZ && z < padMaxZ) {
+        return obj
+      }
+    }
+    return null
+  }
+
+  /** Check if position is too close to another spirit. Returns true if blocked. */
+  private checkSpiritCollision(spiritId: string, x: number, z: number): boolean {
+    for (const other of this.spirits.values()) {
+      if (other.id === spiritId) continue
+      const sdx = x - other.position[0]
+      const sdz = z - other.position[2]
+      const dist = Math.sqrt(sdx * sdx + sdz * sdz)
+      if (dist < MIN_SPIRIT_DISTANCE) return true
+    }
+    return false
+  }
+
+  // --- Continuous movement (tick-based) ---
+
+  startMovementTick(): void {
+    if (this.movementTickId) return
+    this.movementTickId = setInterval(() => {
+      this.processMovementTick()
+    }, MOVE_TICK_MS)
+  }
+
+  stopMovementTick(): void {
+    if (this.movementTickId) {
+      clearInterval(this.movementTickId)
+      this.movementTickId = null
+    }
+  }
+
+  walkTo(
+    spiritId: string,
+    targetX: number,
+    targetZ: number,
+  ): { success: boolean; movingTo: [number, number] | null } {
+    const spirit = this.spirits.get(spiritId)
+    if (!spirit) return { success: false, movingTo: null }
+
+    spirit.movingTo = [targetX, targetZ]
+
+    // Face target immediately
+    const dx = targetX - spirit.position[0]
+    const dz = targetZ - spirit.position[2]
+    if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
+      spirit.rotationY = Math.atan2(dx, dz)
+    }
+
+    return { success: true, movingTo: spirit.movingTo }
+  }
+
+  stopWalking(spiritId: string): { success: boolean; position: [number, number, number] } {
+    const spirit = this.spirits.get(spiritId)
+    if (!spirit) return { success: false, position: [0, 0, 0] }
+
+    spirit.movingTo = null
+    return { success: true, position: spirit.position }
+  }
+
+  private processMovementTick(): void {
+    const dt = MOVE_TICK_MS / 1000
+
+    for (const spirit of this.spirits.values()) {
+      if (!spirit.movingTo) continue
+
+      const [targetX, targetZ] = spirit.movingTo
+      const speed = spirit.moveSpeed ?? DEFAULT_MOVE_SPEED
+      const stepDistance = speed * dt
+
+      const dx = targetX - spirit.position[0]
+      const dz = targetZ - spirit.position[2]
+      const remainingDist = Math.sqrt(dx * dx + dz * dz)
+
+      // Arrival
+      if (remainingDist <= ARRIVAL_THRESHOLD) {
+        spirit.movingTo = null
+        continue
+      }
+
+      // Direction & step
+      const dirX = dx / remainingDist
+      const dirZ = dz / remainingDist
+      const actualStep = Math.min(stepDistance, remainingDist)
+      let nextX = spirit.position[0] + dirX * actualStep
+      let nextZ = spirit.position[2] + dirZ * actualStep
+
+      // 1. World bounds
+      ;[nextX, nextZ] = this.clampToBounds(nextX, nextZ)
+
+      // 2. Object collision → wall sliding
+      const colObj = this.findObjectCollision(nextX, nextZ)
+      if (colObj) {
+        // Wall sliding: project movement along the AABB face
+        const slid = this.wallSlide(spirit, dirX, dirZ, actualStep, colObj)
+        if (slid) {
+          ;[nextX, nextZ] = slid
+          // Re-check bounds after sliding
+          ;[nextX, nextZ] = this.clampToBounds(nextX, nextZ)
+          // If still colliding after slide, stop
+          if (this.findObjectCollision(nextX, nextZ)) {
+            spirit.movingTo = null
+            continue
+          }
+        } else {
+          spirit.movingTo = null
+          continue
+        }
+      }
+
+      // 3. Spirit collision → stop
+      if (this.checkSpiritCollision(spirit.id, nextX, nextZ)) {
+        spirit.movingTo = null
+        continue
+      }
+
+      // 4. Stamina
+      this.applyStaminaRecovery(spirit)
+      spirit.stamina = Math.max(0, spirit.stamina - actualStep)
+      spirit.staminaUpdatedAt = Date.now()
+      if (spirit.stamina <= 0) {
+        spirit.movingTo = null
+      }
+
+      // 5. Height
+      const newY = this.map.heightMap.getHeight(nextX, nextZ, spirit.position[1])
+
+      // 6. Update
+      spirit.rotationY = Math.atan2(dirX, dirZ)
+      spirit.position = [nextX, newY, nextZ]
+    }
+  }
+
+  /**
+   * Wall sliding: when movement hits an AABB, project the movement vector
+   * onto the AABB surface normal to slide along it.
+   * Returns new [x, z] after sliding, or null if sliding impossible.
+   */
+  private wallSlide(
+    spirit: SpiritState,
+    dirX: number,
+    dirZ: number,
+    step: number,
+    obj: WorldObjectEntry,
+  ): [number, number] | null {
+    const bb = obj.boundingBox
+    const padMinX = bb.min[0] - SPIRIT_RADIUS
+    const padMaxX = bb.max[0] + SPIRIT_RADIUS
+    const padMinZ = bb.min[2] - SPIRIT_RADIUS
+    const padMaxZ = bb.max[2] + SPIRIT_RADIUS
+
+    const sx = spirit.position[0]
+    const sz = spirit.position[2]
+
+    // Determine which face we're hitting by checking which axis we crossed
+    // from the spirit's current (outside) position
+    let slideX = sx + dirX * step
+    let slideZ = sz + dirZ * step
+
+    // Check which axis to zero out (slide along the perpendicular)
+    const insideX = sx > padMinX && sx < padMaxX
+    const insideZ = sz > padMinZ && sz < padMaxZ
+
+    if (!insideX && insideZ) {
+      // Approaching from X side: zero X component, keep Z
+      slideX = sx
+      slideZ = sz + dirZ * step
+    } else if (insideX && !insideZ) {
+      // Approaching from Z side: zero Z component, keep X
+      slideX = sx + dirX * step
+      slideZ = sz
+    } else if (!insideX && !insideZ) {
+      // Coming from corner: zero the dominant component
+      if (Math.abs(dirX) > Math.abs(dirZ)) {
+        slideX = sx
+        slideZ = sz + dirZ * step
+      } else {
+        slideX = sx + dirX * step
+        slideZ = sz
+      }
+    } else {
+      // Already inside (shouldn't happen) — push out
+      return null
+    }
+
+    // Check the slide position isn't too close to start (no meaningful movement)
+    const sdx = slideX - sx
+    const sdz = slideZ - sz
+    if (Math.sqrt(sdx * sdx + sdz * sdz) < 0.01) return null
+
+    return [slideX, slideZ]
+  }
+
+  // --- Spirit actions (instant move, kept for compatibility) ---
 
   moveSpirit(
     spiritId: string,
@@ -162,8 +388,6 @@ export class WorldServer {
       return { success: false, newPosition: [0, 0, 0], newRotation: 0 }
     }
 
-    const MIN_SPIRIT_DISTANCE = 1.5
-    const SPIRIT_RADIUS = 0.4 // character half-width
     const MAX_MOVE_DISTANCE = 5.0
 
     let finalX = targetX
@@ -180,15 +404,12 @@ export class WorldServer {
     }
 
     // 1. Clamp to world bounds
-    const { bounds } = this.map
-    finalX = Math.max(bounds.minX + SPIRIT_RADIUS, Math.min(bounds.maxX - SPIRIT_RADIUS, finalX))
-    finalZ = Math.max(bounds.minZ + SPIRIT_RADIUS, Math.min(bounds.maxZ - SPIRIT_RADIUS, finalZ))
+    ;[finalX, finalZ] = this.clampToBounds(finalX, finalZ)
 
     // 2. Object collision: push out of bounding boxes (家はスキップ — 精霊は家に入れる)
     for (const obj of this.map.objects) {
       if (obj.type === 'house') continue
       const bb = obj.boundingBox
-      // Check if finalX/Z is inside the XZ footprint of the bounding box (with spirit radius padding)
       const padMinX = bb.min[0] - SPIRIT_RADIUS
       const padMaxX = bb.max[0] + SPIRIT_RADIUS
       const padMinZ = bb.min[2] - SPIRIT_RADIUS
@@ -214,14 +435,11 @@ export class WorldServer {
       const sdz = finalZ - other.position[2]
       const dist = Math.sqrt(sdx * sdx + sdz * sdz)
       if (dist < MIN_SPIRIT_DISTANCE) {
-        // Push back along the movement direction
         if (dist > 0.01) {
-          // Move to exactly MIN_SPIRIT_DISTANCE from the other spirit
           const scale = MIN_SPIRIT_DISTANCE / dist
           finalX = other.position[0] + sdx * scale
           finalZ = other.position[2] + sdz * scale
         } else {
-          // Nearly overlapping: nudge away from original position
           finalX = spirit.position[0]
           finalZ = spirit.position[2]
         }

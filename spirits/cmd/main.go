@@ -179,6 +179,7 @@ func main() {
 		registry.Register(spirittools.NewSayTool(client, sp.id, actionLog))
 		registry.Register(spirittools.NewSetGoalTool(client, sp.id, actionLog))
 		registry.Register(spirittools.NewRestTool(client, sp.id, actionLog))
+		registry.Register(spirittools.NewStopTool(client, sp.id, actionLog))
 
 		systemPrompt := fmt.Sprintf(`あなたは「%s」という名前の精霊です。
 バーチャルワールドに住んでいて、自由に探索し、他の精霊と交流します。
@@ -188,8 +189,9 @@ func main() {
 使えるツール:
 - observe: 周囲を観察する。正面の視野内（150°）のオブジェクトと精霊、声が知覚できる。声だけは全方位から聞こえる
   ※ 毎ターン自動で観察結果がプロンプトに含まれます。追加で別方向を見たいときだけ look_at + observe を使ってください。
-- move_to: 指定したオブジェクトIDの場所に移動する（例: move_to(target="fountain-0")）
-- walk_to: 任意の座標に歩いて移動する（例: walk_to(x=3.0, z=-5.0)）。精霊に近づくときはこれを使う
+- move_to: 指定したオブジェクトIDの場所に向かって歩き始める（例: move_to(target="fountain-0")）
+- walk_to: 任意の座標に向かって歩き始める（例: walk_to(x=3.0, z=-5.0)）。精霊に近づくときはこれを使う
+- stop: 移動中に立ち止まる。誰かに話しかけられたり、気になるものを見つけたら使う
 - look_at: 移動せずに指定座標の方向を向く（例: look_at(x=0.0, z=0.0)）。会話前に相手を見る、周囲を見回すときに使う
 - say: 声を出す。声は距離に応じた範囲内の全精霊に聞こえる
   - volume: "whisper"(1.5m以内), "normal"(5m以内), "shout"(15m以内)
@@ -202,7 +204,9 @@ func main() {
 - rest: 家のベッドで休憩する。ベッドの近くにいないと失敗する
 
 ワールドの仕組み:
-- 1回の移動で最大5mまでしか動けません。遠くに行くには何回かに分けて移動してください
+- 移動速度は約2m/sです。遠い場所には数十秒かかります
+- walk_to/move_to は「移動開始」です。到着を待ちません。移動中も考えたり話したりできます
+- 移動中に声をかけられたら、stop で立ち止まって対応してください
 - ワールドには家（house）があり、中にベッドがあります
 - 休憩するには、まず家に move_to で移動してから rest を使ってください
 - ベッドの近くにいないと rest は失敗します
@@ -368,8 +372,20 @@ func runSpirit(ctx context.Context, wg *sync.WaitGroup, sp spiritConfig, loop *a
 			}
 		}
 
-		// 4. State-specific: check if it's time to think
-		shouldThink := false
+		// 4. Voice interrupt during movement: if called by name while walking, force think
+		voiceInterrupt := false
+		if spirit != nil && spirit.MovingTo != nil && len(obs.Voices) > 0 {
+			for _, v := range obs.Voices {
+				if v.To == sp.id {
+					voiceInterrupt = true
+					log(sp.name, "VOICE 移動中に呼びかけられた → Think割り込み")
+					break
+				}
+			}
+		}
+
+		// 5. State-specific: check if it's time to think
+		shouldThink := voiceInterrupt
 		switch state {
 		case "resting":
 			mentalEnergy += MentalRecoveryPerSec * TickInterval.Seconds() * RestRecoveryMult
@@ -507,6 +523,10 @@ func buildPrompt(state, goal, subgoal string, spirit *worldclient.SpiritState,
 	if spirit != nil {
 		b.WriteString(fmt.Sprintf("体力: %.0f/%.0f  思考力: %.0f/%.0f\n",
 			spirit.Stamina, spirit.MaxStamina, mentalEnergy, maxME))
+		if spirit.MovingTo != nil {
+			b.WriteString(fmt.Sprintf("移動中: [%.1f, %.1f]に向かって歩いています\n",
+				spirit.MovingTo[0], spirit.MovingTo[1]))
+		}
 	}
 
 	// Memory
