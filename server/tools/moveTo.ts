@@ -44,7 +44,7 @@ export function createMoveToTool(world: WorldServer): Tool {
         return {
           success: result.success,
           data: { position: result.newPosition, targetObject: obj.id },
-          message: `${obj.type}(${obj.id})に向かって移動した。現在位置: (${result.newPosition[0].toFixed(1)}, ${result.newPosition[2].toFixed(1)})`,
+          message: `${obj.name}(${obj.id})に向かって移動した。現在位置: (${result.newPosition[0].toFixed(1)}, ${result.newPosition[2].toFixed(1)})`,
         }
       }
 

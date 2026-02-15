@@ -2,18 +2,17 @@
 
 export type TimeOfDay = 'morning' | 'day' | 'evening' | 'night'
 
-export type WorldObjectType = string
-
 export interface WorldObjectEntry {
   id: string
-  type: WorldObjectType
+  name: string
   position: [number, number, number]
+  rotationY: number
   boundingBox: { min: [number, number, number]; max: [number, number, number] }
 }
 
 export interface VisibleObject {
   id: string
-  type: WorldObjectType
+  name: string
   position: [number, number, number]
   distance: number
   screenOccupancy: number            // 視野内のスクリーン占有率 (0〜1)

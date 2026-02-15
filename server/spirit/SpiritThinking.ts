@@ -86,8 +86,8 @@ export function createStubThinking(): ThinkingEngine {
         // If there are visible objects, sometimes think about them
         if (observation.objects.length > 0 && Math.random() < 0.5) {
           const obj = randomItem(observation.objects)
-          const objThoughts = OBJECT_THOUGHTS[obj.type]
-          thought = objThoughts ? randomItem(objThoughts) : `あの${obj.type}が気になるな。`
+          const objThoughts = OBJECT_THOUGHTS[obj.name]
+          thought = objThoughts ? randomItem(objThoughts) : `あの${obj.name}が気になるな。`
         } else {
           // Think about the time of day
           const timeThoughts = TIME_THOUGHTS[observation.timeOfDay]

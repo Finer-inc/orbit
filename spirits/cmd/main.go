@@ -144,6 +144,14 @@ func main() {
 		}
 	}
 
+	// Fetch world bounds from server
+	if bounds, err := client.GetBounds(); err == nil {
+		SetSpawnBounds(bounds.MinX, bounds.MaxX, bounds.MinZ, bounds.MaxZ)
+		fmt.Printf("ワールド範囲取得: X[%.1f ~ %.1f] Z[%.1f ~ %.1f]\n", bounds.MinX, bounds.MaxX, bounds.MinZ, bounds.MaxZ)
+	} else {
+		fmt.Printf("ワールド範囲取得失敗（デフォルト使用）: %v\n", err)
+	}
+
 	nameGen := NewCombinatorialNameGen()
 	if count > nameGen.MaxNames() {
 		fmt.Fprintf(os.Stderr, "SPIRIT_COUNT=%d exceeds max unique names (%d)\n", count, nameGen.MaxNames())
@@ -552,7 +560,7 @@ func buildPrompt(state, goal, subgoal string, spirit *worldclient.SpiritState,
 			} else if obj.ScreenOccupancy > 0.03 {
 				size = "中くらい"
 			}
-			b.WriteString(fmt.Sprintf("  - %s (%s): 距離%.1f, %s\n", obj.ID, obj.Type, obj.Distance, size))
+			b.WriteString(fmt.Sprintf("  - %s (%s): 距離%.1f, %s\n", obj.ID, obj.Name, obj.Distance, size))
 		}
 	}
 

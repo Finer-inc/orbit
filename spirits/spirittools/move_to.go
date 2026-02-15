@@ -71,8 +71,8 @@ func (t *MoveToTool) Execute(ctx context.Context, args map[string]interface{}) (
 		estimatedTime = dist / 2.0
 	}
 
-	t.actionLog.Add("move_to", fmt.Sprintf("%s（%s）に向かって歩き始めた", target, obj.Type))
+	t.actionLog.Add("move_to", fmt.Sprintf("%s（%s）に向かって歩き始めた", target, obj.Name))
 
 	return fmt.Sprintf("【移動開始】%s（%s）に向かって歩き始めました。到着まで約%.0f秒。移動中も他のことができます。",
-		target, obj.Type, estimatedTime), nil
+		target, obj.Name, estimatedTime), nil
 }

@@ -50,7 +50,7 @@ func (t *ObserveTool) Execute(ctx context.Context, args map[string]interface{}) 
 			} else if obj.ScreenOccupancy > 0.03 {
 				size = "中くらい"
 			}
-			result += fmt.Sprintf("  - %s (%s): 距離%.1f, %s\n", obj.ID, obj.Type, obj.Distance, size)
+			result += fmt.Sprintf("  - %s (%s): 距離%.1f, %s\n", obj.ID, obj.Name, obj.Distance, size)
 		}
 	}
 

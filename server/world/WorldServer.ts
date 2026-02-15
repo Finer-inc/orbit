@@ -160,6 +160,10 @@ export class WorldServer {
     return this.map.beds
   }
 
+  getBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    return this.map.bounds
+  }
+
   // --- Collision helpers ---
 
   /** Clamp position to world bounds */
@@ -171,10 +175,9 @@ export class WorldServer {
     ]
   }
 
-  /** Check if position is inside any non-house object AABB. Returns the colliding object or null. */
+  /** Check if position is inside any object AABB. Returns the colliding object or null. */
   private findObjectCollision(x: number, z: number): WorldObjectEntry | null {
     for (const obj of this.map.objects) {
-      if (obj.type === 'house') continue
       const bb = obj.boundingBox
       const padMinX = bb.min[0] - SPIRIT_RADIUS
       const padMaxX = bb.max[0] + SPIRIT_RADIUS
@@ -406,9 +409,8 @@ export class WorldServer {
     // 1. Clamp to world bounds
     ;[finalX, finalZ] = this.clampToBounds(finalX, finalZ)
 
-    // 2. Object collision: push out of bounding boxes (家はスキップ — 精霊は家に入れる)
+    // 2. Object collision: push out of bounding boxes
     for (const obj of this.map.objects) {
-      if (obj.type === 'house') continue
       const bb = obj.boundingBox
       const padMinX = bb.min[0] - SPIRIT_RADIUS
       const padMaxX = bb.max[0] + SPIRIT_RADIUS
@@ -663,5 +665,26 @@ export class WorldServer {
 
   getObjectById(id: string): WorldObjectEntry | undefined {
     return this.map.objects.find((obj) => obj.id === id)
+  }
+
+  getTerrainMesh(): { positions: number[]; indices: number[] } | null {
+    return this.map.terrainMesh ?? null
+  }
+
+  /** グリッド状のheightmapを返す（size×size、-halfSize〜+halfSize） */
+  getTerrainHeightmap(size: number = 80, terrainSize: number = 200): {
+    size: number; terrainSize: number; heights: number[]
+  } {
+    const half = terrainSize / 2
+    const step = terrainSize / size
+    const heights: number[] = []
+    for (let iz = 0; iz <= size; iz++) {
+      for (let ix = 0; ix <= size; ix++) {
+        const x = -half + ix * step
+        const z = -half + iz * step
+        heights.push(this.map.heightMap.getHeight(x, z))
+      }
+    }
+    return { size, terrainSize, heights }
   }
 }

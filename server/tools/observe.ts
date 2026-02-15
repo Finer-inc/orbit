@@ -1,12 +1,6 @@
 import type { Tool } from './types.ts'
-import type { ToolResult, VisibleObject, NearbySpiritInfo, WorldObjectType } from '../../src/types/world.ts'
+import type { ToolResult, VisibleObject, NearbySpiritInfo } from '../../src/types/world.ts'
 import type { WorldServer } from '../world/WorldServer.ts'
-
-const OBJECT_TYPE_LABELS: Record<WorldObjectType, string> = {
-  fountain: '噴水',
-  house: '家',
-  tree: '木',
-}
 
 function formatDistance(d: number): string {
   return d.toFixed(1)
@@ -15,29 +9,12 @@ function formatDistance(d: number): string {
 function formatObjects(objects: VisibleObject[]): string {
   if (objects.length === 0) return '周囲に目立つものは見えない。'
 
-  // Group by type for natural language output
-  const grouped = new Map<WorldObjectType, VisibleObject[]>()
-  for (const obj of objects) {
-    const list = grouped.get(obj.type) ?? []
-    list.push(obj)
-    grouped.set(obj.type, list)
-  }
-
   const parts: string[] = []
-  for (const [type, items] of grouped) {
-    const label = OBJECT_TYPE_LABELS[type] ?? type
-    if (items.length === 1) {
-      const item = items[0]
-      parts.push(`${label}(${item.id}, 距離${formatDistance(item.distance)})`)
-    } else {
-      const details = items
-        .map((item) => `${item.id}: 距離${formatDistance(item.distance)}`)
-        .join(', ')
-      parts.push(`${label}が${items.length}つ(${details})`)
-    }
+  for (const obj of objects) {
+    parts.push(`${obj.name}(${obj.id}, 距離${formatDistance(obj.distance)})`)
   }
 
-  return parts.join('。') + 'が見える。'
+  return parts.join('、') + 'が見える。'
 }
 
 function formatSpirits(spirits: NearbySpiritInfo[]): string {

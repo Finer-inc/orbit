@@ -45,7 +45,7 @@ type SpiritState struct {
 
 type VisibleObject struct {
 	ID              string     `json:"id"`
-	Type            string     `json:"type"`
+	Name            string     `json:"name"`
 	Position        [3]float64 `json:"position"`
 	Distance        float64    `json:"distance"`
 	ScreenOccupancy float64    `json:"screenOccupancy"`
@@ -104,12 +104,19 @@ type BedInfo struct {
 
 type WorldObject struct {
 	ID          string     `json:"id"`
-	Type        string     `json:"type"`
+	Name        string     `json:"name"`
 	Position    [3]float64 `json:"position"`
 	BoundingBox struct {
 		Min [3]float64 `json:"min"`
 		Max [3]float64 `json:"max"`
 	} `json:"boundingBox"`
+}
+
+type WorldBounds struct {
+	MinX float64 `json:"minX"`
+	MaxX float64 `json:"maxX"`
+	MinZ float64 `json:"minZ"`
+	MaxZ float64 `json:"maxZ"`
 }
 
 func (c *Client) Register(id, name string, position [3]float64, color string) (*SpiritState, error) {
@@ -220,6 +227,14 @@ func (c *Client) ListBeds() ([]BedInfo, error) {
 		return nil, err
 	}
 	return beds, nil
+}
+
+func (c *Client) GetBounds() (*WorldBounds, error) {
+	var bounds WorldBounds
+	if err := c.get("/api/world/bounds", &bounds); err != nil {
+		return nil, err
+	}
+	return &bounds, nil
 }
 
 func (c *Client) UpdateState(spiritID, state string, goal, subgoal *string) (*SpiritState, error) {

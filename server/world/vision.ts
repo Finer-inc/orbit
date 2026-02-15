@@ -299,7 +299,7 @@ export function computeVisibleObjects(
 
     results.push({
       id: obj.id,
-      type: obj.type,
+      name: obj.name,
       position: obj.position,
       distance,
       screenOccupancy,

@@ -24,7 +24,9 @@ async function main(): Promise<void> {
     map = createWorldMapFromGLB(glbPath)
   }
   const world = new WorldServer(map)
+  const wb = world.getBounds()
   logger.worldEvent(`ワールド初期化完了: ${world.getAllObjects().length}個のオブジェクト`)
+  logger.worldEvent(`ワールド範囲: X[${wb.minX.toFixed(1)} ~ ${wb.maxX.toFixed(1)}] Z[${wb.minZ.toFixed(1)} ~ ${wb.maxZ.toFixed(1)}]`)
   const dayLen = process.env.DAY_LENGTH_MINUTES
   logger.worldEvent(`1日の長さ: ${dayLen ?? '24'}分${dayLen ? '' : ' (デフォルト)'}`)
   logger.worldEvent(`現在の時間帯: ${world.getTimeOfDay()}`)
@@ -38,8 +40,11 @@ async function main(): Promise<void> {
   const runtime = new SpiritRuntime(world, logger)
 
   if (process.env.TEST_SPIRITS) {
-    runtime.addSpirit('spirit-1', 'Hikari', { position: [5, 0, 5], thinkIntervalMs: 3000 })
-    runtime.addSpirit('spirit-2', 'Kaze', { position: [-5, 0, -5], thinkIntervalMs: 4000 })
+    const b = world.getBounds()
+    const randX = () => b.minX + Math.random() * (b.maxX - b.minX)
+    const randZ = () => b.minZ + Math.random() * (b.maxZ - b.minZ)
+    runtime.addSpirit('spirit-1', 'Hikari', { position: [randX(), 0, randZ()], thinkIntervalMs: 3000 })
+    runtime.addSpirit('spirit-2', 'Kaze', { position: [randX(), 0, randZ()], thinkIntervalMs: 4000 })
     logger.worldEvent('テスト精霊2体を配置完了')
   }
   runtime.start()

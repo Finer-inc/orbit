@@ -7,30 +7,23 @@ import (
 	"time"
 )
 
-// Spawn bounds (world-wide). Keep inside current playable extents.
-const (
-	spawnMinX = -72.0
-	spawnMaxX = 40.0
-	spawnMinZ = -85.0
-	spawnMaxZ = 60.0
+// Spawn bounds — defaults; overridden at runtime by SetSpawnBounds.
+var (
+	spawnMinX = -30.0
+	spawnMaxX = 30.0
+	spawnMinZ = -30.0
+	spawnMaxZ = 30.0
 )
 
-// Exclude obvious non-walkable water zones.
-func isBlockedSpawn(x, z float64) bool {
-	// Fountain basin
-	if x*x+z*z <= 3.7*3.7 {
-		return true
-	}
-	// River: center (44,10), size 8x100
-	if x >= 40 && x <= 48 && z >= -40 && z <= 60 {
-		return true
-	}
-	// Lake: center (28,52), radius 12
-	dx := x - 28
-	dz := z - 52
-	if dx*dx+dz*dz <= 12*12 {
-		return true
-	}
+// SetSpawnBounds updates the spawn area from server-provided world bounds.
+func SetSpawnBounds(minX, maxX, minZ, maxZ float64) {
+	spawnMinX = minX
+	spawnMaxX = maxX
+	spawnMinZ = minZ
+	spawnMaxZ = maxZ
+}
+
+func isBlockedSpawn(_, _ float64) bool {
 	return false
 }
 

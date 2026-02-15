@@ -127,6 +127,14 @@ export function startApiServer(world: WorldServer): void {
     return c.json(obj)
   })
 
+  app.get('/api/world/bounds', (c) => {
+    return c.json(world.getBounds())
+  })
+
+  app.get('/api/world/terrain', (c) => {
+    return c.json(world.getTerrainHeightmap())
+  })
+
   // --- Start ---
 
   const PORT = Number(process.env.PORT) || 3001
