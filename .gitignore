@@ -5,3 +5,4 @@ dist/
 .env
 spirits/seirei-spirit
 spirits/sessions/
+public/worlds/world.json

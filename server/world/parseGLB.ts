@@ -247,27 +247,15 @@ export interface HeightMap {
   getHeight(x: number, z: number, fromY?: number): number
 }
 
-/** Build a triangle mesh spatial index for fast height queries.
+/** Build a HeightMap from pre-transformed world-space vertex arrays.
  *  Uses a 2D grid to bucket triangles, then does point-in-triangle + barycentric Y. */
-function buildTerrainMesh(
-  positions: Float32Array,
+export function buildTerrainMeshFromArrays(
+  vx: Float32Array,
+  vy: Float32Array,
+  vz: Float32Array,
   indices: Uint32Array,
-  worldMatrix: number[],
 ): HeightMap {
-  // Transform all vertices to world space
-  const vertCount = positions.length / 3
-  const vx = new Float32Array(vertCount)
-  const vy = new Float32Array(vertCount)
-  const vz = new Float32Array(vertCount)
-
-  for (let i = 0; i < vertCount; i++) {
-    const lx = positions[i * 3]
-    const ly = positions[i * 3 + 1]
-    const lz = positions[i * 3 + 2]
-    vx[i] = worldMatrix[0] * lx + worldMatrix[4] * ly + worldMatrix[8] * lz + worldMatrix[12]
-    vy[i] = worldMatrix[1] * lx + worldMatrix[5] * ly + worldMatrix[9] * lz + worldMatrix[13]
-    vz[i] = worldMatrix[2] * lx + worldMatrix[6] * ly + worldMatrix[10] * lz + worldMatrix[14]
-  }
+  const vertCount = vx.length
 
   // Find XZ bounds
   let minX = Infinity, maxX = -Infinity
@@ -355,6 +343,30 @@ function buildTerrainMesh(
   }
 }
 
+/** Build a triangle mesh spatial index for fast height queries.
+ *  Transforms local-space positions to world space, then delegates to buildTerrainMeshFromArrays. */
+function buildTerrainMesh(
+  positions: Float32Array,
+  indices: Uint32Array,
+  worldMatrix: number[],
+): HeightMap {
+  const vertCount = positions.length / 3
+  const vx = new Float32Array(vertCount)
+  const vy = new Float32Array(vertCount)
+  const vz = new Float32Array(vertCount)
+
+  for (let i = 0; i < vertCount; i++) {
+    const lx = positions[i * 3]
+    const ly = positions[i * 3 + 1]
+    const lz = positions[i * 3 + 2]
+    vx[i] = worldMatrix[0] * lx + worldMatrix[4] * ly + worldMatrix[8] * lz + worldMatrix[12]
+    vy[i] = worldMatrix[1] * lx + worldMatrix[5] * ly + worldMatrix[9] * lz + worldMatrix[13]
+    vz[i] = worldMatrix[2] * lx + worldMatrix[6] * ly + worldMatrix[10] * lz + worldMatrix[14]
+  }
+
+  return buildTerrainMeshFromArrays(vx, vy, vz, indices)
+}
+
 // ---------------------------------------------------------------------------
 //  Node extraction
 // ---------------------------------------------------------------------------
@@ -385,9 +397,16 @@ function getAccessorBounds(
 const COL_PREFIX = 'col_'
 const COL_REGEX = /^col_(.+?)_(\d+)$/
 
+export interface TerrainRawData {
+  positions: Float32Array
+  indices: Uint32Array
+  worldMatrix: number[]
+}
+
 export interface ParseWorldResult {
   colNodes: ColNode[]
   heightMap: HeightMap
+  terrainRaw?: TerrainRawData
 }
 
 export function parseWorldGLB(filePath: string): ParseWorldResult {
@@ -449,6 +468,7 @@ export function parseWorldGLB(filePath: string): ParseWorldResult {
 
   // Build terrain mesh for height queries (triangle-based, not grid)
   let heightMap: HeightMap = { getHeight: () => 0 }
+  let terrainRaw: TerrainRawData | undefined
   if (binChunk) {
     for (let i = 0; i < gltf.nodes.length; i++) {
       const node = gltf.nodes[i]
@@ -467,10 +487,12 @@ export function parseWorldGLB(filePath: string): ParseWorldResult {
       const triIndices = readIndices(gltf, binChunk, prim.indices)
       if (!triIndices) break
 
-      heightMap = buildTerrainMesh(positions, triIndices, worldMatrices[i] ?? IDENTITY)
+      const wm = worldMatrices[i] ?? IDENTITY
+      terrainRaw = { positions, indices: triIndices, worldMatrix: wm }
+      heightMap = buildTerrainMesh(positions, triIndices, wm)
       break
     }
   }
 
-  return { colNodes: results, heightMap }
+  return { colNodes: results, heightMap, terrainRaw }
 }

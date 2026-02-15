@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import type { WorldObjectEntry } from '../../src/types/world.ts'
-import { parseWorldGLB, type ColNode, type HeightMap } from './parseGLB.ts'
+import { parseWorldGLB, buildTerrainMeshFromArrays, type ColNode, type HeightMap } from './parseGLB.ts'
 
 export interface BedInfo {
   houseId: string
@@ -62,12 +63,14 @@ function computeWorldAABB(node: ColNode): {
 }
 
 // ---------------------------------------------------------------------------
-//  Public API
+//  colNodes → objects / beds / bounds 共通変換
 // ---------------------------------------------------------------------------
 
-export function createWorldMapFromGLB(glbPath: string): WorldMapData {
-  const { colNodes, heightMap } = parseWorldGLB(glbPath)
-
+function buildWorldEntries(colNodes: ColNode[]): {
+  objects: WorldObjectEntry[]
+  beds: BedInfo[]
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
+} {
   const objects: WorldObjectEntry[] = []
   const beds: BedInfo[] = []
 
@@ -112,5 +115,53 @@ export function createWorldMapFromGLB(glbPath: string): WorldMapData {
     maxZ = Math.max(maxZ, obj.boundingBox.max[2])
   }
 
-  return { objects, beds, bounds: { minX, maxX, minZ, maxZ }, heightMap }
+  return { objects, beds, bounds: { minX, maxX, minZ, maxZ } }
+}
+
+// ---------------------------------------------------------------------------
+//  world.json format
+// ---------------------------------------------------------------------------
+
+interface WorldJson {
+  colNodes: ColNode[]
+  terrain: {
+    positions: number[]   // [x0,y0,z0, x1,y1,z1, ...] — world-space
+    indices: number[]
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Public API
+// ---------------------------------------------------------------------------
+
+export function createWorldMapFromGLB(glbPath: string): WorldMapData {
+  const { colNodes, heightMap } = parseWorldGLB(glbPath)
+  const { objects, beds, bounds } = buildWorldEntries(colNodes)
+  return { objects, beds, bounds, heightMap }
+}
+
+export function createWorldMapFromJSON(jsonPath: string): WorldMapData {
+  const raw = readFileSync(jsonPath, 'utf-8')
+  const data: WorldJson = JSON.parse(raw)
+
+  const { objects, beds, bounds } = buildWorldEntries(data.colNodes)
+
+  // terrain → HeightMap
+  let heightMap: HeightMap = { getHeight: () => 0 }
+  if (data.terrain) {
+    const pos = data.terrain.positions
+    const vertCount = pos.length / 3
+    const vx = new Float32Array(vertCount)
+    const vy = new Float32Array(vertCount)
+    const vz = new Float32Array(vertCount)
+    for (let i = 0; i < vertCount; i++) {
+      vx[i] = pos[i * 3]
+      vy[i] = pos[i * 3 + 1]
+      vz[i] = pos[i * 3 + 2]
+    }
+    const indices = new Uint32Array(data.terrain.indices)
+    heightMap = buildTerrainMeshFromArrays(vx, vy, vz, indices)
+  }
+
+  return { objects, beds, bounds, heightMap }
 }

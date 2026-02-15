@@ -1,6 +1,7 @@
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { WorldServer } from './world/WorldServer.ts'
-import { createWorldMapFromGLB } from './world/WorldMap.ts'
+import { createWorldMapFromGLB, createWorldMapFromJSON } from './world/WorldMap.ts'
 import { SpiritRuntime } from './spirit/SpiritRuntime.ts'
 import { createConsoleLogger } from './cli/logger.ts'
 import { startApiServer } from './api.ts'
@@ -10,8 +11,18 @@ async function main(): Promise<void> {
 
   logger.worldEvent('Seirei World Server 起動中...')
 
-  const glbPath = path.join(import.meta.dirname!, '..', 'public', 'worlds', 'seirei-world.glb')
-  const map = createWorldMapFromGLB(glbPath)
+  const worldsDir = path.join(import.meta.dirname!, '..', 'public', 'worlds')
+  const jsonPath = path.join(worldsDir, 'world.json')
+  const glbPath = path.join(worldsDir, 'seirei-world.glb')
+
+  let map
+  if (existsSync(jsonPath)) {
+    logger.worldEvent('world.json からワールド読み込み')
+    map = createWorldMapFromJSON(jsonPath)
+  } else {
+    logger.worldEvent('GLB からワールド読み込み')
+    map = createWorldMapFromGLB(glbPath)
+  }
   const world = new WorldServer(map)
   logger.worldEvent(`ワールド初期化完了: ${world.getAllObjects().length}個のオブジェクト`)
   const dayLen = process.env.DAY_LENGTH_MINUTES
