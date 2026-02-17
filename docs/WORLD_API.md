@@ -1,6 +1,6 @@
 # Seirei World API Reference
 
-> 最終更新: 2026-02-14
+> 最終更新: 2026-02-18
 
 ---
 
@@ -158,9 +158,16 @@ GET /api/world/time → { timeOfDay, hour, timeScale }
 | `maxStamina` | `number` | 体力上限（デフォルト200） |
 | `mentalEnergy` | `number` | 思考力（LLM呼び出しで消費） |
 | `maxMentalEnergy` | `number` | 思考力上限（デフォルト100） |
+| `movingTo` | `[number, number] \| null` | 移動先座標（連続移動中のみ） |
+| `moveSpeed` | `number?` | 移動速度（デフォルト2.0） |
+| `navigatingPath` | `string[] \| null` | ナビゲーション中の経路ノードID配列 |
+| `navigatingIndex` | `number?` | ナビゲーション中の現在ノードインデックス |
 
 ### カメラ
 
+2つのカメラモードを切り替え可能。
+
+#### Overview mode（俯瞰）
 あつ森スタイルの固定角度俯瞰カメラ。最初の精霊を自動追従。
 
 | パラメータ | 値 |
@@ -168,6 +175,9 @@ GET /api/world/time → { timeOfDay, hour, timeScale }
 | オフセット | `[12, 16, 12]` |
 | 追従速度 | lerp 0.05 |
 | 回転 | なし（固定角度） |
+
+#### TPS mode（三人称）
+精霊の背後からの追従カメラ。
 
 ---
 
@@ -190,6 +200,7 @@ GET /api/world/time → { timeOfDay, hour, timeScale }
 - `objects`: FOV 150° 視野ベース（視界内のオブジェクトのみ）
 - `spirits`: FOV 150° 視野ベース（視界内の精霊のみ。背後の精霊は検知不可）
 - `voices`: 360度全方位（距離ベース。背後からの声も聞こえる）
+- `nearbyNodes`: 半径30m以内のPathGraphノード（point/reroute除外。obstacle/areaのみ返す）
 
 ### `move_to`
 指定した場所に移動する。オブジェクトIDまたは座標を指定可能。
@@ -303,6 +314,16 @@ Response: ObservationResult (objects, spirits, timeOfDay, voices)
 ```
 `objects`と`spirits`はFOV 150°視野ベース（背後は検知不可）。`voices`は360度全方位（距離ベース）。未読メッセージがある場合 `voices` に含まれる（取得後クリアされる）。
 
+**ObservationResult のフィールド:**
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `objects` | `VisibleObject[]` | 視界内のワールドオブジェクト |
+| `spirits` | `VisibleSpirit[]` | 視界内の精霊 |
+| `voices` | `Voice[]` | 全方位から届いた声 |
+| `timeOfDay` | `string` | 現在の時間帯 |
+| `nearbyNodes` | `{ id: string; type: string; distance: number }[]?` | 半径30m以内のPathGraphノード（point/reroute除外） |
+
 #### 移動
 ```
 POST /api/spirits/:id/move
@@ -364,11 +385,82 @@ GET /api/world/beds
 Response: BedInfo[]
 ```
 
+#### 歩行（連続移動）
+```
+POST /api/spirits/:id/walk
+Body: { "targetX": number, "targetZ": number }
+Response: { "success": boolean, "movingTo": [number, number] | null }
+```
+
+#### 停止
+```
+POST /api/spirits/:id/stop
+Response: { "success": boolean, "position": [x, y, z] }
+```
+
+#### パスグラフ取得
+```
+GET /api/world/pathgraph
+Response: PathNodeData[] | { "error": "no pathgraph loaded" }
+```
+
+PathNodeData:
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `id` | `string` | ノードID（Rerouteは `_wp_N` 形式の自動ID） |
+| `type` | `"point" \| "obstacle" \| "area" \| "reroute"` | ノードタイプ |
+| `position` | `[x, y, z]` | ワールド座標 |
+| `connections` | `string[]` | 接続先ノードID |
+| `primitives` | `PrimitiveShape[]` | プリミティブ形状 |
+
+#### ナビゲーション開始
+```
+POST /api/spirits/:id/navigate
+Body: { "targetNodeId": string }
+Response: { "success": boolean, "path"?: string[], "error"?: string }
+```
+最寄りノードからA\*でtargetNodeIdへの経路を計算し、連続移動を開始する。
+
+#### ナビゲーション状態取得
+```
+GET /api/spirits/:id/navigation
+Response: { "navigating": boolean, "targetNode"?: string, "path"?: string[], "currentIndex"?: number, "arrived": boolean }
+```
+
+#### スポーンポイント取得
+```
+GET /api/world/spawn-point
+Response: { "position": [x, y, z] }
+```
+スポーンゾーン内からランダムに座標を生成。ゾーン未設定時はboundsランダム。
+
+#### スポーンゾーン一覧
+```
+GET /api/world/spawnzones
+Response: SpawnZoneData[] | { "error": "no spawn zones loaded" }
+```
+
+#### ワールド範囲
+```
+GET /api/world/bounds
+Response: { "minX": number, "maxX": number, "minZ": number, "maxZ": number }
+```
+
+#### 地形ハイトマップ
+```
+GET /api/world/terrain
+Response: { "size": number, "terrainSize": number, "heights": number[] }
+```
+
 ---
 
 ## ワールドオブジェクト一覧
 
-ワールドオブジェクトはGLBファイル（`public/worlds/seirei-world.glb`）の`col_*`ノードから自動取得される。Blenderでステージを編集すれば自動的に反映される。
+ワールドオブジェクトは以下のいずれかから取得される:
+
+- **world.json**（タグベース形式）: `name`フィールドでオブジェクト名を定義し、`tags`配列でオブジェクトの分類を行う
+- **GLBファイル**（`public/worlds/seirei-world.glb`）: `col_*`ノードから自動取得
 
 ### オブジェクトタイプ
 | type | 説明 | コリジョン |
@@ -378,7 +470,45 @@ Response: BedInfo[]
 | `tree` | 木 | ブロック |
 | `streetlight` | 街灯 | ブロック |
 
-オブジェクトIDは `{type}-{index}` 形式（例: `house-3`, `tree-12`）。GLBの`col_{type}_{index}`ノード名から生成される。
+オブジェクトIDはGLBの場合 `{type}-{index}` 形式（例: `house-3`, `tree-12`、`col_{type}_{index}`ノード名から生成）。JSONの場合は `name` フィールドがIDとなる。
+
+---
+
+## パスグラフ（PathGraph）
+
+ワールド内の場所と経路を定義するノードグラフ。Unityエディタで配置・接続し、`pathgraph.json`にエクスポートする。
+
+### ノードタイプ
+| type | 説明 | 到着判定 |
+|------|------|----------|
+| `point` | 名前付き地点 | 2D距離 < 0.5m |
+| `obstacle` | 障害物（建物等） | プリミティブ表面距離 < 0.5m |
+| `area` | エリア（公園等） | プリミティブ内部 |
+| `reroute` | 経路調整用の匿名ノード | 2D距離 < 0.5m |
+
+- **point/obstacle/area**: UnityのGameObject名がIDになる
+- **reroute**: 自動ID（`_wp_0`, `_wp_1`, ...）。AIには「場所」として認識されない
+
+### プリミティブ形状
+
+ノードの形状はUnityのCollider（BoxCollider, SphereCollider, CapsuleCollider）から自動検出される。
+
+| shape | プロパティ |
+|-------|-----------|
+| `box` | center, size, rotation (Euler degrees) |
+| `sphere` | center, radius |
+| `cylinder` | center, radius, height |
+
+---
+
+## スポーンゾーン（SpawnZones）
+
+精霊のスポーン可能エリアを定義。Unityエディタで配置し、`spawnzones.json`にエクスポート。
+
+- プリミティブの和（OR）がスポーン可能領域
+- PathGraphと同じプリミティブ形式（Colliderベース）
+- リジェクションサンプリングでランダム座標を生成（AABB内でランダム → プリミティブ内判定 → OK or 再試行）
+- 未設定時はワールドboundsランダムにフォールバック
 
 ---
 

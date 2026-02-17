@@ -1,7 +1,7 @@
 # Seirei アーキテクチャ設計
 
 > 作成日: 2026-02-10
-> 最終更新: 2026-02-14
+> 最終更新: 2026-02-18
 
 ---
 
@@ -46,10 +46,12 @@
 └──────────────────── ↕ WebSocket/REST ────────────┘
 ┌──────── ワールドサーバー (TypeScript) ──────────┐
 │ server/api.ts — Hono HTTP API (port 3001)        │
-│ ├── ロケーション管理（GLBからcol_*ノード自動取得）│
+│ ├── ロケーション管理（JSON or GLBから読み込み）   │
 │ ├── 視界計算（純粋数学、GPU不要）                │
 │ ├── 遭遇判定（距離ベース）                       │
 │ ├── 地形高さ（GLBメッシュ三角形レイキャスト）    │
+│ ├── パスグラフ（A*経路探索）                     │
+│ ├── スポーンゾーン（Colliderベース）              │
 │ ├── 時間システム（DAY_LENGTH_MINUTES環境変数で速度制御）│
 │ └── REST API（Viteプロキシ /api → localhost:3001）│
 │                                                  │
@@ -63,7 +65,7 @@
 │ │   セッション永続化・文脈圧縮・ツール実行ループ │
 │ ├── GLMProvider / AnthropicProvider              │
 │ │   LLM_PROVIDER env var で切替                  │
-│ ├── ツール: observe, move_to, walk_to, look_at, say, set_goal, rest (think/report/remember: 未実装) │
+│ ├── ツール: observe, move_to, walk_to, look_at, say, set_goal, rest, stop (think/report/remember: 未実装) │
 │ └── オーケストレーター: 未実装（goroutine×1000） │
 │                                                  │
 │ LLM:  GLM-4.7（デフォルト）/ Anthropic API（代替）│
@@ -165,6 +167,7 @@ PicoClawの既存ツール（ファイル操作、シェル、Web検索等）を
 | ReadFile | `observe` | 今いる場所の状況を取得 |
 | Exec | `move_to` | 別のロケーションに移動 |
 | — | `walk_to` | 任意の座標に歩いて移動（精霊に近づく） |
+| — | `stop` | 移動中に立ち止まる |
 | — | `look_at` | 移動せずに指定方向を向く |
 | WebSearch | `say` | 声を出す（空間ブロードキャスト、距離ベースで届く） |
 | — | `think` | 内省する（記憶に書く） |
@@ -185,10 +188,12 @@ Go移植しない理由:
 - Go移植は工数に見合わない（ワールドロジックの再実装 + テスト + バグ修正）
 
 #### ワールドデータのソース
-ワールドのオブジェクト配置と地形はGLBファイル（`public/worlds/seirei-world.glb`）から読み込む。Blenderでステージを編集すればサーバー・フロントエンド両方に自動反映される。
-- `server/world/parseGLB.ts` — GLBバイナリパーサー（JSONチャンク + BINチャンクを読み込み）
-- `col_*` ノードからオブジェクト配置（位置、回転、AABB）を取得
-- `vis_terrain` メッシュから三角形ベースの地形高さクエリを構築（2Dグリッドではなく実メッシュでレイキャスト。`getHeight(x, z, fromY?)` でfromY以下の最も高い面を返すため、橋の下や洞窟にも対応）
+ワールドのオブジェクト配置と地形は以下の2形式から読み込む。`world.json`（タグベース形式、Unityからエクスポート）が存在すればそちらを優先し、なければGLBファイルから読み込む。
+
+- **world.json**（優先）— Unityエディタで配置したオブジェクトをWorldExporterでエクスポート。タグベース形式
+- **GLBファイル**（フォールバック）— `server/world/parseGLB.ts` でGLBバイナリパーサー（JSONチャンク + BINチャンク）を読み込み。`col_*` ノードからオブジェクト配置（位置、回転、AABB）を取得。`vis_terrain` メッシュから三角形ベースの地形高さクエリを構築（2Dグリッドではなく実メッシュでレイキャスト。`getHeight(x, z, fromY?)` でfromY以下の最も高い面を返すため、橋の下や洞窟にも対応）
+- **pathgraph.json** — パスグラフデータ（UnityのPathGraphExporterからエクスポート）。A*経路探索、ノード判定、プリミティブヒットテストに使用
+- **spawnzones.json** — スポーンゾーンデータ（UnityのSpawnZoneExporterからエクスポート）。リジェクションサンプリングでスポーン位置を決定
 
 ### 3.4 WebSocket/REST API
 
@@ -206,11 +211,12 @@ spirits/                            ← Go module
 │   ├── main.go                     ← エントリポイント (行動ループ, 状態管理, リソースシステム)
 │   ├── spiritgen.go                ← 精霊の自動生成 (名前, 人格, 色, 位置, タイミング)
 │   └── namegen.go                  ← 組み合わせ名前生成器
-├── worldclient/client.go           ← TS World Server用HTTPクライアント
+├── worldclient/client.go           ← TS World Server用HTTPクライアント（GetSpawnPoint等）
 ├── spirittools/
 │   ├── observe.go                  ← 観察ツール
 │   ├── move_to.go                  ← オブジェクトID指定移動
 │   ├── walk_to.go                  ← 座標指定移動（1.5m手前停止）
+│   ├── stop.go                     ← 停止ツール（移動中に立ち止まる）
 │   ├── look_at.go                  ← 向き変更ツール
 │   ├── say.go                      ← 発話ツール（空間ブロードキャスト）
 │   ├── set_goal.go                 ← 目標設定ツール
@@ -226,8 +232,10 @@ spirits/                            ← Go module
 ```
 server/world/                        ← TS World Server
 ├── WorldServer.ts                    ← ワールド状態管理の中核
-├── WorldMap.ts                       ← GLBからオブジェクト・ベッド・地形高さを構築
+├── WorldMap.ts                       ← JSON/GLBからオブジェクト・ベッド・地形高さを構築
 ├── WorldClock.ts                     ← DAY_LENGTH_MINUTES環境変数で速度制御
+├── PathGraph.ts                      ← パスグラフ（A*経路探索、ノード判定、プリミティブヒットテスト）
+├── SpawnZones.ts                     ← スポーンゾーン（リジェクションサンプリング）
 ├── parseGLB.ts                       ← GLBバイナリパーサー（col_*抽出 + 三角形地形メッシュ）
 └── vision.ts                         ← Frustum Culling + screenOccupancy
 ```
@@ -237,6 +245,32 @@ PicoClaw改造箇所 (picoclaw/):
 picoclaw/pkg/agent/loop.go         ← NewCustomLoop() 追加 (外部ツール・プロンプト注入)
 picoclaw/pkg/agent/context.go      ← customSystemPrompt フィールド追加
 ```
+
+### 3.7 Unity クライアント（エクスポーター）
+
+Unityエディタで配置したデータをJSONにエクスポートし、TSワールドサーバーが読み込む。
+
+#### エクスポーター
+
+| エクスポーター | メニュー | 入力 | 出力 |
+|------------|--------|------|------|
+| WorldExporter | Window → Seirei → Export World | シーン内オブジェクト | world.json |
+| PathGraphExporter | Window → Seirei → Export Path Graph | PathNodeコンポーネント | pathgraph.json |
+| SpawnZoneExporter | Window → Seirei → Export Spawn Zones | SpawnZoneコンポーネント | spawnzones.json |
+
+#### コンポーネント
+
+- **PathNode** (`Assets/Scripts/PathGraph/PathNode.cs`): ノードタイプ(Point/Obstacle/Area/Reroute)と接続先を定義。Colliderで形状を指定。
+- **SpawnZone** (`Assets/Scripts/SpawnZone/SpawnZone.cs`): スポーンエリアを定義。子のColliderで範囲を指定。
+
+#### 形状検出
+
+Colliderベース（MeshFilterではなくColliderから形状を検出）:
+- BoxCollider → box
+- SphereCollider → sphere
+- CapsuleCollider → cylinder
+
+エクスポーターはコンポーネント自身のGameObjectと子GameObjectのColliderを検出する。
 
 ---
 
@@ -302,12 +336,12 @@ cd spirits && go build -o seirei-spirit ./cmd && ./seirei-spirit
 |--------|------|------|------|
 | ★1 | PicoClaw動作確認 | **完了** | clone、ビルド成功 (Go 1.25.7) |
 | ★2 | コード読解・改造ポイント特定 | **完了** | AgentLoop: privateフィールド問題 → NewCustomLoop追加で解決。HTTPProvider: OpenAI形式のみ → カスタムAnthropicProvider自作 |
-| ★3 | 精霊用ツール実装 (Go) | **一部完了** | observe, move_to, walk_to, look_at, say: 完了。think: 未着手 |
+| ★3 | 精霊用ツール実装 (Go) | **一部完了** | observe, move_to, walk_to, stop, look_at, say, set_goal, rest: 完了。think: 未着手 |
 | ★3.5 | 自律ループ + 複数精霊 | **完了** | SPIRIT_COUNT環境変数で精霊数を指定（デフォルト5体）。自動名前生成・人格生成・色生成。goroutineで並行自律行動 |
 | ★4 | ワールドサーバー | **HTTP API完了** | TS維持確定 (Hono)。Go精霊からHTTP localhostで呼び出し |
 | ★5 | フロントエンド表示 | **完了** | あつ森風カメラ + ポーリング + 精霊描画 + 名前/吹き出し |
 | ★5.5 | 動的人格生成 | **完了** | 精霊ごとに持ち主プロフィール・興味・性格をランダム生成 |
-| ★5.6 | GLBワールド読み込み | **完了** | Blenderで作ったGLBをサーバー・フロントで読み込み。オブジェクト配置・地形高さをGLBから取得 |
+| ★5.6 | ワールド読み込み | **完了** | JSON（Unityエクスポート）またはGLBからオブジェクト配置・地形高さを読み込み。パスグラフ・スポーンゾーン対応 |
 | ★5.7 | 時間帯システム改善 | **完了** | DAY_LENGTH_MINUTES環境変数、フロントエンド同期、リアルタイム空・fog更新 |
 | ★5.8 | GLBライト制御 | **完了** | KHR_lights_punctual対応。StreetLight等のPointLightを時間帯で制御 |
 | ★6 | Supabase永続化 | 未着手 | セッション・会話ログの永続化 |

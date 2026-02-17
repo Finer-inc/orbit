@@ -24,8 +24,8 @@
 │  │       │                         │                       │  │
 │  │       │    ┌────────────────────┘                       │  │
 │  │       │    │  Spirit Tools                              │  │
-│  │       │    │  observe / move_to / walk_to / look_at     │  │
-│  │       │    │  / say / set_goal / rest                   │  │
+│  │       │    │  observe / move_to / walk_to / navigate_to │  │
+│  │       │    │  / look_at / say / set_goal / rest         │  │
 │  │       │    │                                            │  │
 │  └───────┼────┼────────────────────────────────────────────┘  │
 │          │    │                                                │
@@ -40,9 +40,14 @@
 │  │                                                          │  │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐  │  │
 │  │  │位置管理   │ │視界計算   │ │遭遇判定   │ │時間システム │  │  │
-│  │  │GLB col_* │ │ Frustum  │ │ 距離     │ │DAY_LENGTH  │  │  │
+│  │  │JSON/GLB  │ │ Frustum  │ │ 距離     │ │DAY_LENGTH  │  │  │
 │  │  │地形メッシュ│ │ Culling  │ │ チェック  │ │_MINUTES    │  │  │
 │  │  └──────────┘ └──────────┘ └──────────┘ └────────────┘  │  │
+│  │  ┌──────────┐ ┌──────────┐                              │  │
+│  │  │パスグラフ │ │スポーン   │                              │  │
+│  │  │A*経路探索 │ │ゾーン    │                              │  │
+│  │  │ノード判定 │ │ランダム生成│                              │  │
+│  │  └──────────┘ └──────────┘                              │  │
 │  └──────────────────────────┬───────────────────────────────┘  │
 │                              │                                 │
 └──────────────────────────────┼─────────────────────────────────┘
@@ -84,20 +89,24 @@
 │  │      │    │          │                                     │
 │  └──────┘    └──────────┘                                     │
 │                                                               │
-│  ※ observe / move_to / walk_to / look_at / say は HTTP で     │
-│  │  TS World Server を呼び出す                                │
+│  ※ observe / move_to / walk_to / navigate_to / look_at / say  │
+│  │  は HTTP で TS World Server を呼び出す                     │
 │  ※ set_goal / rest は Go プロセス内で完結                      │
 └─────────────────────────────────────────────────────────────┘
           │                                     ▲
           │ HTTP (observe, move_to, walk_to,      │ レスポンス
-          │  look_at, say, set_goal, rest)        │
+          │  navigate_to, look_at, say,           │
+          │  set_goal, rest)                       │
           ▼                                     │
 ┌─────────────────────────────────────────────────────────────┐
 │              TS Process: World Server (localhost:3001)        │
 │                                                               │
-│  observe  → 視界内オブジェクト + 精霊 + 聞こえた声を返す       │
-│  move_to  → 位置更新して結果を返す                             │
-│  say      → 空間ブロードキャスト（距離ベースで到達判定）       │
+│  observe     → 視界内オブジェクト + 精霊 + 聞こえた声を返す    │
+│  move_to     → 位置更新して結果を返す                          │
+│  walk_to     → 座標への連続移動（tick-based）                  │
+│  navigate    → パスグラフA*でノード間経路探索 → 連続移動       │
+│  say         → 空間ブロードキャスト（距離ベースで到達判定）    │
+│  spawn-point → スポーンゾーン内ランダム座標を返す              │
 └─────────────────────────────────────────────────────────────┘
 
          ↓ スケジューラが次の思考時刻まで待機 ↓
@@ -123,8 +132,10 @@ Spirit (Go goroutine)
 AgentLoop (Go Process)
   │
   │                        HTTP localhost:3001
-  ├─ observe ─────────────────→ TS World Server ──→ 視界内オブジェクト + 近くの精霊
+  ├─ observe ─────────────────→ TS World Server ──→ 視界 + 近くの精霊 + PathGraphノード
   ├─ move_to ─────────────────→ TS World Server ──→ 位置更新 ──→ RESTで取得可
+  ├─ walk_to ─────────────────→ TS World Server ──→ 連続移動開始
+  ├─ navigate ────────────────→ TS World Server ──→ A*経路探索 + 連続移動
   ├─ say     ─────────────────→ TS World Server ──→ 空間ブロードキャスト
   │
   │                        Go Process内で完結
