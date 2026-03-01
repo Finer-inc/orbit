@@ -158,7 +158,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	spirits := generateSpirits(count, nameGen)
+	spirits := generateSpirits(count, nameGen, client)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

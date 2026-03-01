@@ -5,6 +5,8 @@ import { createWorldMapFromGLB, createWorldMapFromJSON } from './world/WorldMap.
 import { SpiritRuntime } from './spirit/SpiritRuntime.ts'
 import { createConsoleLogger } from './cli/logger.ts'
 import { startApiServer } from './api.ts'
+import { loadPathGraph } from './world/PathGraph.ts'
+import { loadSpawnZones } from './world/SpawnZones.ts'
 
 async function main(): Promise<void> {
   const logger = createConsoleLogger()
@@ -23,9 +25,19 @@ async function main(): Promise<void> {
     logger.worldEvent('GLB からワールド読み込み')
     map = createWorldMapFromGLB(glbPath)
   }
-  const world = new WorldServer(map)
+  const pathGraphPath = path.join(worldsDir, 'pathgraph.json')
+  const pathGraph = loadPathGraph(pathGraphPath)
+  const spawnZonesPath = path.join(worldsDir, 'spawnzones.json')
+  const spawnZones = loadSpawnZones(spawnZonesPath)
+  const world = new WorldServer(map, pathGraph, spawnZones)
   const wb = world.getBounds()
   logger.worldEvent(`ワールド初期化完了: ${world.getAllObjects().length}個のオブジェクト`)
+  if (pathGraph) {
+    logger.worldEvent(`パスグラフ: ${pathGraph.getAllNodes().length}個のノード`)
+  }
+  if (spawnZones) {
+    logger.worldEvent(`スポーンゾーン: ${spawnZones.getAllZones().length}個`)
+  }
   logger.worldEvent(`ワールド範囲: X[${wb.minX.toFixed(1)} ~ ${wb.maxX.toFixed(1)}] Z[${wb.minZ.toFixed(1)} ~ ${wb.maxZ.toFixed(1)}]`)
   const dayLen = process.env.DAY_LENGTH_MINUTES
   logger.worldEvent(`1日の長さ: ${dayLen ?? '24'}分${dayLen ? '' : ' (デフォルト)'}`)

@@ -237,6 +237,18 @@ func (c *Client) GetBounds() (*WorldBounds, error) {
 	return &bounds, nil
 }
 
+type SpawnPointResult struct {
+	Position [3]float64 `json:"position"`
+}
+
+func (c *Client) GetSpawnPoint() (*SpawnPointResult, error) {
+	var result SpawnPointResult
+	if err := c.get("/api/world/spawn-point", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) UpdateState(spiritID, state string, goal, subgoal *string) (*SpiritState, error) {
 	body := map[string]interface{}{
 		"state": state,

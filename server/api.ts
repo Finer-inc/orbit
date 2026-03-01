@@ -135,6 +135,38 @@ export function startApiServer(world: WorldServer): void {
     return c.json(world.getTerrainHeightmap())
   })
 
+  // --- Path graph ---
+
+  app.get('/api/world/pathgraph', (c) => {
+    const nodes = world.getPathNodes()
+    if (!nodes) return c.json({ error: 'no pathgraph loaded' }, 404)
+    return c.json(nodes)
+  })
+
+  app.post('/api/spirits/:id/navigate', async (c) => {
+    const { targetNodeId } = await c.req.json<{ targetNodeId: string }>()
+    const result = world.navigateTo(c.req.param('id'), targetNodeId)
+    return c.json(result)
+  })
+
+  app.get('/api/spirits/:id/navigation', (c) => {
+    const status = world.getNavigationStatus(c.req.param('id'))
+    if (!status) return c.json({ error: 'not found' }, 404)
+    return c.json(status)
+  })
+
+  // --- Spawn zones ---
+
+  app.get('/api/world/spawn-point', (c) => {
+    return c.json({ position: world.getRandomSpawnPoint() })
+  })
+
+  app.get('/api/world/spawnzones', (c) => {
+    const zones = world.getSpawnZones()
+    if (!zones) return c.json({ error: 'no spawn zones loaded' }, 404)
+    return c.json(zones)
+  })
+
   // --- Start ---
 
   const PORT = Number(process.env.PORT) || 3001

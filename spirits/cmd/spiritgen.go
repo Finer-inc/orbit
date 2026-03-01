@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"time"
+
+	"seirei/spirits/worldclient"
 )
 
 // Spawn bounds — defaults; overridden at runtime by SetSpawnBounds.
@@ -72,7 +74,7 @@ var flavorTemplates = map[string]string{
 }
 
 // generateSpirits creates spirit configurations with auto-generated attributes.
-func generateSpirits(count int, nameGen NameGenerator) []spiritConfig {
+func generateSpirits(count int, nameGen NameGenerator, client *worldclient.Client) []spiritConfig {
 	spirits := make([]spiritConfig, count)
 
 	// Shuffle owner names for unique assignment
@@ -85,7 +87,7 @@ func generateSpirits(count int, nameGen NameGenerator) []spiritConfig {
 	for i := 0; i < count; i++ {
 		name := nameGen.Generate(i)
 		color := generateColor(i, count)
-		pos := generatePosition(i, count)
+		pos := generatePosition(client)
 		persona := generatePersona(i, shuffledOwners)
 		timing := generateTiming()
 
@@ -129,8 +131,15 @@ func generateColor(index, total int) string {
 	return hslToHex(hue, sat, lit)
 }
 
-// generatePosition distributes spirits uniformly across the whole world.
-func generatePosition(_, _ int) [3]float64 {
+// generatePosition gets a spawn point from the server, falling back to local bounds-based random.
+func generatePosition(client *worldclient.Client) [3]float64 {
+	// Try server-side spawn point first
+	if client != nil {
+		if result, err := client.GetSpawnPoint(); err == nil {
+			return result.Position
+		}
+	}
+	// Fallback: existing bounds-based random
 	for i := 0; i < 128; i++ {
 		x := spawnMinX + rand.Float64()*(spawnMaxX-spawnMinX)
 		z := spawnMinZ + rand.Float64()*(spawnMaxZ-spawnMinZ)
@@ -139,8 +148,6 @@ func generatePosition(_, _ int) [3]float64 {
 		}
 		return [3]float64{math.Round(x*10) / 10, 0, math.Round(z*10) / 10}
 	}
-
-	// Fallback (should be rare)
 	return [3]float64{0, 0, 0}
 }
 

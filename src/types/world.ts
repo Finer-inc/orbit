@@ -63,6 +63,9 @@ export interface SpiritState {
   // 連続移動
   movingTo?: [number, number] | null
   moveSpeed?: number
+  // ナビゲーション
+  navigatingPath?: string[] | null
+  navigatingIndex?: number
 }
 
 export interface NearbySpiritInfo {
@@ -109,6 +112,7 @@ export interface ObservationResult {
   spirits: NearbySpiritInfo[]
   timeOfDay: TimeOfDay
   voices: HeardVoice[]
+  nearbyNodes?: { id: string; type: string; distance: number }[]
 }
 
 // === ツール関連の型 ===

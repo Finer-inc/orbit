@@ -14,6 +14,8 @@ import { VOLUME_RANGE } from '../../src/types/world.ts'
 import { WorldClock } from './WorldClock.ts'
 import type { WorldMapData, BedInfo } from './WorldMap.ts'
 import { computeVisibleObjects } from './vision.ts'
+import type { PathGraph, PathNodeData } from './PathGraph.ts'
+import type { SpawnZones, SpawnZoneData } from './SpawnZones.ts'
 
 // Stamina: 2/分 base recovery (per ms)
 const STAMINA_RECOVERY_PER_MS = 2 / 60_000
@@ -33,14 +35,18 @@ const MIN_SPIRIT_DISTANCE = 1.5
 export class WorldServer {
   private clock: WorldClock
   private map: WorldMapData
+  private pathGraph: PathGraph | null
+  private spawnZones: SpawnZones | null
   private spirits: Map<string, SpiritState>
   private spatialMessages: SpatialMessage[]
   private lastObserveAt: Map<string, number>
   private movementTickId: ReturnType<typeof setInterval> | null = null
 
-  constructor(map: WorldMapData) {
+  constructor(map: WorldMapData, pathGraph: PathGraph | null = null, spawnZones: SpawnZones | null = null) {
     this.clock = new WorldClock()
     this.map = map
+    this.pathGraph = pathGraph
+    this.spawnZones = spawnZones
     this.spirits = new Map()
     this.spatialMessages = []
     this.lastObserveAt = new Map()
@@ -243,7 +249,94 @@ export class WorldServer {
     if (!spirit) return { success: false, position: [0, 0, 0] }
 
     spirit.movingTo = null
+    spirit.navigatingPath = null
+    spirit.navigatingIndex = undefined
     return { success: true, position: spirit.position }
+  }
+
+  // --- Navigation (PathGraph) ---
+
+  navigateTo(spiritId: string, targetNodeId: string): { success: boolean; path?: string[]; error?: string } {
+    if (!this.pathGraph) return { success: false, error: 'no pathgraph loaded' }
+    const spirit = this.spirits.get(spiritId)
+    if (!spirit) return { success: false, error: 'spirit not found' }
+    const targetNode = this.pathGraph.getNode(targetNodeId)
+    if (!targetNode) return { success: false, error: 'node not found' }
+
+    const nearest = this.pathGraph.findNearestNode(spirit.position)
+    if (!nearest) return { success: false, error: 'no nearby node' }
+
+    const path = this.pathGraph.findPath(nearest.id, targetNodeId)
+    if (!path) return { success: false, error: 'no path found' }
+
+    spirit.navigatingPath = path
+    spirit.navigatingIndex = 0
+
+    // Start walking to first node
+    this.walkToNode(spirit, path[0])
+
+    return { success: true, path }
+  }
+
+  private walkToNode(spirit: SpiritState, nodeId: string): void {
+    if (!this.pathGraph) return
+    const node = this.pathGraph.getNode(nodeId)
+    if (!node) return
+
+    if (node.type === 'obstacle' && node.primitives.length > 0) {
+      const approach = this.pathGraph.getApproachPoint(spirit.position, nodeId)
+      spirit.movingTo = [approach[0], approach[2]]
+    } else {
+      spirit.movingTo = [node.position[0], node.position[2]]
+    }
+
+    // Face target
+    if (spirit.movingTo) {
+      const dx = spirit.movingTo[0] - spirit.position[0]
+      const dz = spirit.movingTo[1] - spirit.position[2]
+      if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
+        spirit.rotationY = Math.atan2(dx, dz)
+      }
+    }
+  }
+
+  getNavigationStatus(spiritId: string): { navigating: boolean; targetNode?: string; path?: string[]; currentIndex?: number; arrived: boolean } | null {
+    const spirit = this.spirits.get(spiritId)
+    if (!spirit) return null
+    if (!spirit.navigatingPath) return { navigating: false, arrived: false }
+    return {
+      navigating: true,
+      targetNode: spirit.navigatingPath[spirit.navigatingPath.length - 1],
+      path: spirit.navigatingPath,
+      currentIndex: spirit.navigatingIndex,
+      arrived: false,
+    }
+  }
+
+  getPathNodes(): PathNodeData[] | null {
+    return this.pathGraph?.getAllNodes() ?? null
+  }
+
+  // --- Spawn zones ---
+
+  getRandomSpawnPoint(): [number, number, number] {
+    if (this.spawnZones) {
+      const point = this.spawnZones.getRandomSpawnPoint()
+      if (point) {
+        // Apply height map
+        point[1] = this.map.heightMap.getHeight(point[0], point[2])
+        return point
+      }
+    }
+    // Fallback: random within bounds
+    const b = this.map.bounds
+    const x = b.minX + Math.random() * (b.maxX - b.minX)
+    const z = b.minZ + Math.random() * (b.maxZ - b.minZ)
+    return [x, this.map.heightMap.getHeight(x, z), z]
+  }
+
+  getSpawnZones(): SpawnZoneData[] | null {
+    return this.spawnZones?.getAllZones() ?? null
   }
 
   private processMovementTick(): void {
@@ -263,6 +356,21 @@ export class WorldServer {
       // Arrival
       if (remainingDist <= ARRIVAL_THRESHOLD) {
         spirit.movingTo = null
+
+        // Navigation: advance to next waypoint
+        if (spirit.navigatingPath && spirit.navigatingIndex !== undefined && this.pathGraph) {
+          const currentNodeId = spirit.navigatingPath[spirit.navigatingIndex]
+          if (this.pathGraph.hasArrived(spirit.position, currentNodeId)) {
+            spirit.navigatingIndex++
+            if (spirit.navigatingIndex < spirit.navigatingPath.length) {
+              this.walkToNode(spirit, spirit.navigatingPath[spirit.navigatingIndex])
+            } else {
+              // Arrived at final destination
+              spirit.navigatingPath = null
+              spirit.navigatingIndex = undefined
+            }
+          }
+        }
         continue
       }
 
@@ -510,12 +618,19 @@ export class WorldServer {
     // 3. Get heard voices (spatial broadcast)
     const voices = this.getHeardVoices(spiritId)
 
-    // 4. Return combined observation
+    // 4. Nearby path nodes
+    let nearbyNodes: { id: string; type: string; distance: number }[] | undefined
+    if (this.pathGraph) {
+      nearbyNodes = this.pathGraph.getNearbyNodes(spirit.position, 30)
+    }
+
+    // 5. Return combined observation
     return {
       objects,
       spirits,
       timeOfDay: this.getTimeOfDay(),
       voices,
+      nearbyNodes,
     }
   }
 

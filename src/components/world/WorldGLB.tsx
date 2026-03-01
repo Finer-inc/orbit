@@ -3,7 +3,7 @@ import { useGLTF } from '@react-three/drei'
 import type { PointLight } from 'three'
 import type { TimeOfDay } from '../../types/world'
 
-const GLB_PATH = '/worlds/seirei-world.glb'
+const GLB_PATH = '/worlds/scene.glb'
 
 interface WorldGLBProps {
   timeOfDay: TimeOfDay
