@@ -36,7 +36,7 @@ export interface VisionAPI {
   getVisibleObjects(): VisibleObject[]
 }
 
-// === 精霊関連の型（バックエンド用） ===
+// === エージェント関連の型（バックエンド用） ===
 
 export type SpiritBehaviorState = 'idle' | 'active' | 'conversing' | 'resting'
 
@@ -88,8 +88,8 @@ export const VOLUME_RANGE: Record<Volume, number> = {
 export interface SpatialMessage {
   from: string                        // 発話者名
   fromId: string                      // 発話者ID
-  to?: string                         // 宛先精霊ID（任意）
-  toName?: string                     // 宛先精霊名（任意）
+  to?: string                         // 宛先エージェントID（任意）
+  toName?: string                     // 宛先エージェント名（任意）
   message: string
   volume: Volume
   position: [number, number, number]  // 発話位置
@@ -100,8 +100,8 @@ export interface SpatialMessage {
 export interface HeardVoice {
   from: string       // 発話者名
   fromId: string     // 発話者ID
-  to?: string        // 宛先精霊ID
-  toName?: string    // 宛先精霊名
+  to?: string        // 宛先エージェントID
+  toName?: string    // 宛先エージェント名
   message: string
   volume: Volume
   distance: number   // リスナーからの距離

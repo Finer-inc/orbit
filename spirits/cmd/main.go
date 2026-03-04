@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -21,7 +20,6 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // Behavior loop timing — base values (per-spirit intervals are randomized in spiritgen.go)
@@ -49,12 +47,23 @@ type spiritTiming struct {
 }
 
 type spiritConfig struct {
-	id       string
-	name     string
-	position [3]float64
-	color    string
-	persona  string
-	timing   spiritTiming
+	id        string
+	name      string
+	position  [3]float64
+	color     string
+	workspace map[string]string
+	timing    spiritTiming
+}
+
+var workspaceKeys = []struct {
+	Key    string
+	Header string
+}{
+	{"identity", "アイデンティティ"},
+	{"soul", "人格"},
+	{"user", "持ち主"},
+	{"agents", "使命"},
+	{"memory", "記憶"},
 }
 
 // rateLimitedProvider wraps an LLMProvider with a concurrency semaphore.
@@ -136,14 +145,6 @@ func main() {
 
 	client := worldclient.New(worldURL)
 
-	countStr := os.Getenv("SPIRIT_COUNT")
-	count := 5
-	if countStr != "" {
-		if n, err := strconv.Atoi(countStr); err == nil && n > 0 {
-			count = n
-		}
-	}
-
 	// Fetch world bounds from server
 	if bounds, err := client.GetBounds(); err == nil {
 		SetSpawnBounds(bounds.MinX, bounds.MaxX, bounds.MinZ, bounds.MaxZ)
@@ -153,105 +154,57 @@ func main() {
 	}
 
 	nameGen := NewCombinatorialNameGen()
-	if count > nameGen.MaxNames() {
-		fmt.Fprintf(os.Stderr, "SPIRIT_COUNT=%d exceeds max unique names (%d)\n", count, nameGen.MaxNames())
-		os.Exit(1)
-	}
-
-	spirits := generateSpirits(count, nameGen, client)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	var wg sync.WaitGroup
+	mgr := NewSpiritManager(ctx, client, provider, model, nameGen)
 
-	fmt.Printf("=== 精霊生成完了: %d体 ===\n", count)
-	for i, sp := range spirits {
-		state, err := client.Register(sp.id, sp.name, sp.position, sp.color)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Register %s failed: %v\n", sp.name, err)
-			os.Exit(1)
+	// Initial spirits from SPIRIT_COUNT (default 0 for API-only mode)
+	countStr := os.Getenv("SPIRIT_COUNT")
+	count := 0
+	if countStr != "" {
+		if n, err := strconv.Atoi(countStr); err == nil && n >= 0 {
+			count = n
 		}
-		fmt.Printf("  %s (%s) pos=[%.0f,%.0f] color=%s timing=[idle=%ds active=%ds conv=%ds rest=%ds]\n",
-			state.Name, sp.id, state.Position[0], state.Position[2], sp.color,
-			int(sp.timing.idleThink.Seconds()), int(sp.timing.activeThink.Seconds()),
-			int(sp.timing.convThink.Seconds()), int(sp.timing.restCheck.Seconds()))
-
-		actionLog := spirittools.NewActionLog(30)
-
-		registry := tools.NewToolRegistry()
-		registry.Register(spirittools.NewObserveTool(client, sp.id))
-		registry.Register(spirittools.NewMoveToTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewWalkToTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewLookAtTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewSayTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewSetGoalTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewRestTool(client, sp.id, actionLog))
-		registry.Register(spirittools.NewStopTool(client, sp.id, actionLog))
-
-		systemPrompt := fmt.Sprintf(`あなたは「%s」という名前の精霊です。
-バーチャルワールドに住んでいて、自由に探索し、他の精霊と交流します。
-
-%s
-
-使えるツール:
-- observe: 周囲を観察する。正面の視野内（150°）のオブジェクトと精霊、声が知覚できる。声だけは全方位から聞こえる
-  ※ 毎ターン自動で観察結果がプロンプトに含まれます。追加で別方向を見たいときだけ look_at + observe を使ってください。
-- move_to: 指定したオブジェクトIDの場所に向かって歩き始める（例: move_to(target="fountain-0")）
-- walk_to: 任意の座標に向かって歩き始める（例: walk_to(x=3.0, z=-5.0)）。精霊に近づくときはこれを使う
-- stop: 移動中に立ち止まる。誰かに話しかけられたり、気になるものを見つけたら使う
-- look_at: 移動せずに指定座標の方向を向く（例: look_at(x=0.0, z=0.0)）。会話前に相手を見る、周囲を見回すときに使う
-- say: 声を出す。声は距離に応じた範囲内の全精霊に聞こえる
-  - volume: "whisper"(1.5m以内), "normal"(5m以内), "shout"(15m以内)
-  - to: 話しかける相手のID（任意。省略すると独り言）
-  - 重要: 話しかける前に必ず walk_to で相手の近くまで移動してから say を使うこと。遠くから声をかけても届かない
-  - 重要: セリフは画面に10秒間表示される。10秒で読める長さに収めること。長い話は複数回に分けて話す
-- set_goal: 目標とアプローチを宣言する。何をしたいか決まったら使う
-  - goal: 大きな目的（例: "友達を作りたい"、"ワールドを探索したい"）
-  - subgoal: 今のアプローチ（例: "みんなに話を聞く"、"噴水の周りを散歩する"）
-- rest: 家のベッドで休憩する。ベッドの近くにいないと失敗する
-
-ワールドの仕組み:
-- 移動速度は約2m/sです。遠い場所には数十秒かかります
-- walk_to/move_to は「移動開始」です。到着を待ちません。移動中も考えたり話したりできます
-- 移動中に声をかけられたら、stop で立ち止まって対応してください
-- ワールドには家（house）があり、中にベッドがあります
-- 休憩するには、まず家に move_to で移動してから rest を使ってください
-- ベッドの近くにいないと rest は失敗します
-
-行動のルール:
-- 状態に応じて適切に行動してください
-- idle状態: 何をしたいか考えて、set_goal で目標を宣言してください
-- active状態: 目標に向かって行動してください
-- conversing状態: 会話に集中してください。say で返事しましょう
-- say の前には必ず look_at で相手の方を向くこと（意図的に背を向ける等の理由がない限り）
-- 精霊が見えたら、まず walk_to で近づいてから say で話しかける。「通常の声で届く」と表示されるまで近づくこと
-- 体力や思考力が低くなったら、早めに家に向かって休みましょう。枯渇してからでは遅いです
-- 同じ場所にばかりいないで色々な場所を探索しましょう
-- 前回までの行動を踏まえて行動してください`, sp.name, sp.persona)
-
-		loop := agent.NewCustomLoop(agent.CustomLoopConfig{
-			Provider:      provider,
-			Tools:         registry,
-			Model:         model,
-			ContextWindow: 8192,
-			MaxIterations: 4,
-			SessionDir:    "",
-			SystemPrompt:  systemPrompt,
-		})
-
-		wg.Add(1)
-		startDelay := time.Duration(i) * 2 * time.Second
-		go runSpirit(ctx, &wg, sp, loop, client, startDelay, actionLog)
 	}
 
-	ts := time.Now().Format("15:04:05")
-	fmt.Printf("\n[%s] === 行動ループ開始 (%d体, tick=%s, Ctrl+C で停止) ===\n\n",
-		ts, len(spirits), TickInterval)
+	if count > 0 {
+		fmt.Printf("=== 初期エージェント %d体を生成中 ===\n", count)
+		for i := 0; i < count; i++ {
+			result, err := mgr.SpawnSpirit(SpawnRequest{})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Spawn failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("  %s (%s) color=%s\n", result.Name, result.ID, result.Color)
+			// Stagger startup
+			if i < count-1 {
+				sleepCtx(ctx, 2*time.Second)
+			}
+		}
+	}
 
-	wg.Wait()
+	// Start management API
+	startMgmtAPI(mgr)
+
+	ts := time.Now().Format("15:04:05")
+	fmt.Printf("\n[%s] === 行動ループ開始 (%d体, tick=%s, Ctrl+C で停止) ===\n",
+		ts, count, TickInterval)
+	fmt.Printf("[%s] === 管理API: POST/DELETE/GET http://localhost:%s/agents ===\n\n",
+		ts, func() string {
+			if p := os.Getenv("MGMT_PORT"); p != "" {
+				return p
+			}
+			return "3002"
+		}())
+
+	// Block until Ctrl+C
+	<-ctx.Done()
+	fmt.Println("\nシャットダウン中...")
+	mgr.WaitAll()
 	ts = time.Now().Format("15:04:05")
-	fmt.Printf("\n[%s] === 全精霊停止 ===\n", ts)
+	fmt.Printf("[%s] === 全エージェント停止 ===\n", ts)
 }
 
 // log prints a timestamped, spirit-prefixed message.
@@ -284,8 +237,7 @@ func resourceStr(spirit *worldclient.SpiritState, me, maxME float64) string {
 	return fmt.Sprintf("ST=%.0f/%.0f ME=%.0f/%.0f", spirit.Stamina, spirit.MaxStamina, me, maxME)
 }
 
-func runSpirit(ctx context.Context, wg *sync.WaitGroup, sp spiritConfig, loop *agent.AgentLoop, client *worldclient.Client, startDelay time.Duration, actionLog *spirittools.ActionLog) {
-	defer wg.Done()
+func runSpirit(ctx context.Context, sp spiritConfig, loop *agent.AgentLoop, client *worldclient.Client, startDelay time.Duration, actionLog *spirittools.ActionLog) {
 
 	// Stagger startup to avoid simultaneous API calls
 	if startDelay > 0 {
@@ -565,9 +517,9 @@ func buildPrompt(state, goal, subgoal string, spirit *worldclient.SpiritState,
 	}
 
 	if len(obs.Spirits) == 0 {
-		b.WriteString("視界に入った精霊: いない\n")
+		b.WriteString("視界に入ったエージェント: いない\n")
 	} else {
-		b.WriteString("視界に入った精霊:\n")
+		b.WriteString("視界に入ったエージェント:\n")
 		for _, s := range obs.Spirits {
 			var reachability string
 			switch {
@@ -630,6 +582,57 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-time.After(d):
 	}
+}
+
+func buildSystemPrompt(name string, ws map[string]string) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("あなたは「%s」という名前のエージェントです。\nバーチャルワールドに住んでいて、自由に探索し、他のエージェントと交流します。\n", name))
+
+	for _, wk := range workspaceKeys {
+		if content := ws[wk.Key]; content != "" {
+			b.WriteString(fmt.Sprintf("\n# %s\n%s\n", wk.Header, content))
+		}
+	}
+
+	b.WriteString(`
+使えるツール:
+- observe: 周囲を観察する。正面の視野内（150°）のオブジェクトとエージェント、声が知覚できる。声だけは全方位から聞こえる
+  ※ 毎ターン自動で観察結果がプロンプトに含まれます。追加で別方向を見たいときだけ look_at + observe を使ってください。
+- move_to: 指定したオブジェクトIDの場所に向かって歩き始める（例: move_to(target="fountain-0")）
+- walk_to: 任意の座標に向かって歩き始める（例: walk_to(x=3.0, z=-5.0)）。他のエージェントに近づくときはこれを使う
+- stop: 移動中に立ち止まる。誰かに話しかけられたり、気になるものを見つけたら使う
+- look_at: 移動せずに指定座標の方向を向く（例: look_at(x=0.0, z=0.0)）。会話前に相手を見る、周囲を見回すときに使う
+- say: 声を出す。声は距離に応じた範囲内の全エージェントに聞こえる
+  - volume: "whisper"(1.5m以内), "normal"(5m以内), "shout"(15m以内)
+  - to: 話しかける相手のID（任意。省略すると独り言）
+  - 重要: 話しかける前に必ず walk_to で相手の近くまで移動してから say を使うこと。遠くから声をかけても届かない
+  - 重要: セリフは画面に10秒間表示される。10秒で読める長さに収めること。長い話は複数回に分けて話す
+- set_goal: 目標とアプローチを宣言する。何をしたいか決まったら使う
+  - goal: 大きな目的（例: "友達を作りたい"、"ワールドを探索したい"）
+  - subgoal: 今のアプローチ（例: "みんなに話を聞く"、"噴水の周りを散歩する"）
+- rest: 家のベッドで休憩する。ベッドの近くにいないと失敗する
+
+ワールドの仕組み:
+- 移動速度は約2m/sです。遠い場所には数十秒かかります
+- walk_to/move_to は「移動開始」です。到着を待ちません。移動中も考えたり話したりできます
+- 移動中に声をかけられたら、stop で立ち止まって対応してください
+- ワールドには家（house）があり、中にベッドがあります
+- 休憩するには、まず家に move_to で移動してから rest を使ってください
+- ベッドの近くにいないと rest は失敗します
+
+行動のルール:
+- 状態に応じて適切に行動してください
+- idle状態: 何をしたいか考えて、set_goal で目標を宣言してください
+- active状態: 目標に向かって行動してください
+- conversing状態: 会話に集中してください。say で返事しましょう
+- say の前には必ず look_at で相手の方を向くこと（意図的に背を向ける等の理由がない限り）
+- 他のエージェントが見えたら、まず walk_to で近づいてから say で話しかける。「通常の声で届く」と表示されるまで近づくこと
+- 体力や思考力が低くなったら、早めに家に向かって休みましょう。枯渇してからでは遅いです
+- 同じ場所にばかりいないで色々な場所を探索しましょう
+- 前回までの行動を踏まえて行動してください`)
+
+	return b.String()
 }
 
 func truncate(s string, maxLen int) string {

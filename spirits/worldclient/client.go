@@ -133,6 +133,10 @@ func (c *Client) Register(id, name string, position [3]float64, color string) (*
 	return &state, nil
 }
 
+func (c *Client) Unregister(spiritID string) error {
+	return c.delete(fmt.Sprintf("/api/spirits/%s", spiritID))
+}
+
 func (c *Client) Observe(spiritID string) (*ObservationResult, error) {
 	var result ObservationResult
 	if err := c.post(fmt.Sprintf("/api/spirits/%s/observe", spiritID), nil, &result); err != nil {
@@ -328,6 +332,26 @@ func (c *Client) post(path string, body interface{}, result interface{}) error {
 	}
 
 	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+func (c *Client) delete(path string) error {
+	req, err := http.NewRequest("DELETE", c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
+	}
+
+	return nil
 }
 
 func (c *Client) patch(path string, body interface{}, result interface{}) error {

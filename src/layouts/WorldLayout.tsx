@@ -97,13 +97,14 @@ function SceneCapture() {
 
 interface WorldLayoutProps {
   children: ReactNode
+  style?: React.CSSProperties
 }
 
-export function WorldLayout({ children }: WorldLayoutProps) {
+export function WorldLayout({ children, style }: WorldLayoutProps) {
   return (
     <Canvas
       camera={{ position: [30, 25, 30], fov: 60 }}
-      style={{ width: '100vw', height: '100vh' }}
+      style={style ?? { width: '100vw', height: '100vh' }}
     >
       {children}
       <SceneCapture />

@@ -4,10 +4,28 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sync"
 	"time"
 
 	"seirei/spirits/worldclient"
 )
+
+// shuffledOwnersOnce ensures ownerNames are shuffled exactly once.
+var (
+	shuffledOwnersOnce sync.Once
+	globalShuffledOwners []string
+)
+
+func getShuffledOwners() []string {
+	shuffledOwnersOnce.Do(func() {
+		globalShuffledOwners = make([]string, len(ownerNames))
+		copy(globalShuffledOwners, ownerNames)
+		rand.Shuffle(len(globalShuffledOwners), func(i, j int) {
+			globalShuffledOwners[i], globalShuffledOwners[j] = globalShuffledOwners[j], globalShuffledOwners[i]
+		})
+	})
+	return globalShuffledOwners
+}
 
 // Spawn bounds — defaults; overridden at runtime by SetSpawnBounds.
 var (
@@ -76,32 +94,34 @@ var flavorTemplates = map[string]string{
 // generateSpirits creates spirit configurations with auto-generated attributes.
 func generateSpirits(count int, nameGen NameGenerator, client *worldclient.Client) []spiritConfig {
 	spirits := make([]spiritConfig, count)
-
-	// Shuffle owner names for unique assignment
-	shuffledOwners := make([]string, len(ownerNames))
-	copy(shuffledOwners, ownerNames)
-	rand.Shuffle(len(shuffledOwners), func(i, j int) {
-		shuffledOwners[i], shuffledOwners[j] = shuffledOwners[j], shuffledOwners[i]
-	})
+	owners := getShuffledOwners()
 
 	for i := 0; i < count; i++ {
 		name := nameGen.Generate(i)
 		color := generateColor(i, count)
 		pos := generatePosition(client)
-		persona := generatePersona(i, shuffledOwners)
+		ws := generateWorkspace(i, owners)
 		timing := generateTiming()
 
 		spirits[i] = spiritConfig{
-			id:       fmt.Sprintf("spirit-go-%d", i+1),
-			name:     name,
-			position: pos,
-			color:    color,
-			persona:  persona,
-			timing:   timing,
+			id:        fmt.Sprintf("spirit-go-%d", i+1),
+			name:      name,
+			position:  pos,
+			color:     color,
+			workspace: ws,
+			timing:    timing,
 		}
 	}
 
 	return spirits
+}
+
+// generateRandomColor produces a random pastel hex color (for dynamically added spirits).
+func generateRandomColor() string {
+	hue := rand.Float64() * 360
+	sat := 50 + rand.Float64()*20 // 50-70%
+	lit := 65 + rand.Float64()*10 // 65-75%
+	return hslToHex(hue, sat, lit)
 }
 
 // generateTiming creates randomized per-spirit timing intervals.
@@ -151,29 +171,20 @@ func generatePosition(client *worldclient.Client) [3]float64 {
 	return [3]float64{0, 0, 0}
 }
 
-// generatePersona creates a persona string from random profile elements.
-func generatePersona(index int, shuffledOwners []string) string {
+// generateWorkspace creates a workspace map from random profile elements.
+func generateWorkspace(index int, shuffledOwners []string) map[string]string {
 	owner := shuffledOwners[index%len(shuffledOwners)]
-
-	// Pick 3 unique interests
 	picked := pickN(interests, 3)
-	interestStr := picked[0] + "、" + picked[1] + "、" + picked[2]
-
-	// Pick 2 unique traits
 	pickedTraits := pickN(traits, 2)
-	traitStr := pickedTraits[0] + "、" + pickedTraits[1]
-
-	// Flavor text from first trait
 	flavor := flavorTemplates[pickedTraits[0]]
 	if flavor == "" {
 		flavor = "独特の雰囲気を持っています。"
 	}
 
-	return fmt.Sprintf(`あなたの持ち主のプロフィール:
-- 名前: %s
-- 興味: %s
-- 性格: %s
-あなたの人格はこのプロフィールを反映しています。%s`, owner, interestStr, traitStr, flavor)
+	return map[string]string{
+		"soul": fmt.Sprintf("- 性格: %s、%s\n%s", pickedTraits[0], pickedTraits[1], flavor),
+		"user": fmt.Sprintf("- 持ち主の名前: %s\n- 持ち主の興味: %s、%s、%s", owner, picked[0], picked[1], picked[2]),
+	}
 }
 
 // pickN returns n unique random elements from the slice.

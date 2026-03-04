@@ -10,7 +10,7 @@ interface CameraControllerProps {
   mode: CameraMode
 }
 
-// TPS モード: 精霊の背後オフセット（ローカル座標）
+// TPS モード: エージェントの背後オフセット（ローカル座標）
 const TPS_OFFSET = new THREE.Vector3(0, 3, -6)
 const TPS_LOOK_HEIGHT = 1.5
 
@@ -45,7 +45,7 @@ export default function CameraController({ targetPosition, targetRotationY, mode
     const [tx, ty, tz] = targetPosition
 
     {
-      // 注視点は常に精霊に追従（位置だけは追う）
+      // 注視点は常にエージェントに追従（位置だけは追う）
       targetVec.current.set(tx, ty + TPS_LOOK_HEIGHT, tz)
       orbitControls.target.lerp(targetVec.current, LERP_SPEED)
 

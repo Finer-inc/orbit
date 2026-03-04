@@ -311,7 +311,7 @@ npm run dev             # Vite開発サーバー (プロキシ: /api → localho
 
 ### TSワールドサーバー（本番）
 ```bash
-npx tsx server/api.ts   # Hono HTTP API (port 3001)
+npx tsx server/index.ts   # ワールド初期化 + Hono HTTP API (port 3001)
 ```
 
 ### TSプロトタイプサーバー（参考用）

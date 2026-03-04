@@ -24,7 +24,7 @@ export function useCameraMode(spiritCount: number): CameraModeState {
     setMode((prev) => (prev === 'overhead' ? 'tps' : 'overhead'))
   }, [])
 
-  // A/D キーで精霊切替（TPSのみ）、V キーでモード切替
+  // A/D キーでエージェント切替（TPSのみ）、V キーでモード切替
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // input/select にフォーカスがある場合は無視

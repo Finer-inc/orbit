@@ -16,7 +16,7 @@ interface CameraHUDProps {
 export default function CameraHUD({ spirits, selectedIndex, mode, onSelectIndex, onToggleMode }: CameraHUDProps) {
   return (
     <div style={{
-      position: 'fixed',
+      position: 'absolute',
       top: 12,
       left: 16,
       zIndex: 10,
