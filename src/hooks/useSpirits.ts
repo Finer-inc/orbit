@@ -5,7 +5,7 @@ const POLL_INTERVAL = 2000
 
 export function useSpirits(): SpiritState[] {
   const [spirits, setSpirits] = useState<SpiritState[]>([])
-  const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
   useEffect(() => {
     const fetchSpirits = async () => {

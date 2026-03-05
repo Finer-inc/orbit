@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { WORKSPACE_TABS, type WorkspaceTabKey } from '../../types/management'
+import { parseSpriteZip } from '../../services/spriteLoader'
+import { setPending } from '../../stores/spriteStore'
 
 const defaultWorkspace = (): Record<WorkspaceTabKey, string> =>
   Object.fromEntries(WORKSPACE_TABS.map(t => [t.key, t.defaultValue])) as Record<WorkspaceTabKey, string>
@@ -14,9 +16,44 @@ export default function SpiritAddForm({ onSubmit, disabled, error }: SpiritAddFo
   const [name, setName] = useState('')
   const [activeTab, setActiveTab] = useState<WorkspaceTabKey>('identity')
   const [workspace, setWorkspace] = useState<Record<WorkspaceTabKey, string>>(defaultWorkspace)
+  const [spriteLoading, setSpriteLoading] = useState(false)
+  const [spriteProgress, setSpriteProgress] = useState('')
+  const [spriteReady, setSpriteReady] = useState(false)
+  const [spriteError, setSpriteError] = useState<string | null>(null)
+  const zipInputRef = useRef<HTMLInputElement>(null)
 
   const handleFieldChange = (value: string) => {
     setWorkspace(prev => ({ ...prev, [activeTab]: value }))
+  }
+
+  const handleZipSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSpriteLoading(true)
+    setSpriteError(null)
+    setSpriteReady(false)
+    setSpriteProgress('ZIP展開中...')
+    try {
+      const data = await parseSpriteZip(file, (stage, _pct) => {
+        setSpriteProgress(stage)
+      })
+      setPending(data)
+      setSpriteReady(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'スプライトの読み込みに失敗しました'
+      setSpriteError(msg)
+      setPending(null)
+    } finally {
+      setSpriteLoading(false)
+      setSpriteProgress('')
+      if (zipInputRef.current) zipInputRef.current.value = ''
+    }
+  }
+
+  const handleClearSprite = () => {
+    setPending(null)
+    setSpriteReady(false)
+    setSpriteError(null)
   }
 
   const handleSubmit = () => {
@@ -24,6 +61,7 @@ export default function SpiritAddForm({ onSubmit, disabled, error }: SpiritAddFo
     setName('')
     setWorkspace(defaultWorkspace())
     setActiveTab('identity')
+    setSpriteReady(false)
   }
 
   const activeTabDef = WORKSPACE_TABS.find(t => t.key === activeTab)!
@@ -83,6 +121,47 @@ export default function SpiritAddForm({ onSubmit, disabled, error }: SpiritAddFo
             {tab.label}
           </button>
         ))}
+      </div>
+
+      {/* ZIP upload */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{
+          padding: '4px 12px',
+          fontSize: 13,
+          borderRadius: 4,
+          border: '1px solid rgba(255,255,255,0.3)',
+          background: spriteLoading ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)',
+          color: '#fff',
+          cursor: spriteLoading ? 'not-allowed' : 'pointer',
+        }}>
+          {spriteLoading ? spriteProgress || '読み込み中...' : 'スプライトZIP'}
+          <input
+            ref={zipInputRef}
+            type="file"
+            accept=".zip"
+            onChange={handleZipSelect}
+            disabled={spriteLoading}
+            style={{ display: 'none' }}
+          />
+        </label>
+        {spriteReady && (
+          <>
+            <span style={{ color: '#6bff6b', fontSize: 12 }}>スプライト適用済み</span>
+            <button
+              onClick={handleClearSprite}
+              style={{
+                padding: '2px 8px', fontSize: 11, borderRadius: 4,
+                border: '1px solid rgba(255,255,255,0.3)',
+                background: 'rgba(0,0,0,0.4)', color: '#ff9999', cursor: 'pointer',
+              }}
+            >
+              クリア
+            </button>
+          </>
+        )}
+        {spriteError && (
+          <span style={{ color: '#ff6b6b', fontSize: 12 }}>{spriteError}</span>
+        )}
       </div>
 
       <textarea

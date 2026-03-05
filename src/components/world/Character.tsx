@@ -1,34 +1,34 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import type { SpriteData } from '../../services/spriteLoader'
+import BillboardCharacter from './BillboardCharacter'
 
 interface CharacterProps {
   position: [number, number, number]
   rotationY: number
   color?: string
   isResting?: boolean
+  isMoving?: boolean
+  spriteData?: SpriteData
   speechRadius?: number
   children?: React.ReactNode
 }
 
 const LERP_SPEED = 0.08
 
-export default function Character({ position, rotationY, color = '#e8b88a', isResting = false, speechRadius, children }: CharacterProps) {
+export default function Character({ position, rotationY, color = '#e8b88a', isResting = false, isMoving = false, spriteData, speechRadius, children }: CharacterProps) {
   const groupRef = useRef<THREE.Group>(null!)
-  const bodyRef = useRef<THREE.Group>(null!)
   const currentRotation = useRef(rotationY)
-  const currentTilt = useRef(0)
   const initialized = useRef(false)
 
   useFrame(() => {
     const group = groupRef.current
     if (!group) return
 
-    // 初回はテレポート
     if (!initialized.current) {
       group.position.set(position[0], position[1], position[2])
       currentRotation.current = rotationY
-      group.rotation.y = rotationY
       initialized.current = true
       return
     }
@@ -39,26 +39,65 @@ export default function Character({ position, rotationY, color = '#e8b88a', isRe
       LERP_SPEED,
     )
 
-    // 回転を補間（最短経路）
-    const diff = rotationY - currentRotation.current
-    const wrapped = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI
-    currentRotation.current += wrapped * LERP_SPEED
-    group.rotation.y = currentRotation.current
-
-    // resting時の傾き補間
-    const body = bodyRef.current
-    if (body) {
-      const targetTilt = isResting ? -Math.PI / 2 : 0
-      currentTilt.current += (targetTilt - currentTilt.current) * LERP_SPEED
-      body.rotation.x = currentTilt.current
-      // resting時のY位置調整（仰向けになると中心が下がる）
-      const targetY = isResting ? -0.7 : 0
-      body.position.y += (targetY - body.position.y) * LERP_SPEED
+    // 回転を補間（最短経路）— BoxGeometry用。Billboard側は自前で向きを管理
+    if (!spriteData) {
+      const diff = rotationY - currentRotation.current
+      const wrapped = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI
+      currentRotation.current += wrapped * LERP_SPEED
+      group.rotation.y = currentRotation.current
     }
   })
 
   return (
     <group ref={groupRef}>
+      {spriteData ? (
+        <BillboardCharacter
+          spriteData={spriteData}
+          facingAngle={rotationY}
+          isMoving={isMoving}
+          isResting={isResting}
+          speechRadius={speechRadius}
+        >
+          {children}
+        </BillboardCharacter>
+      ) : (
+        <BoxCharacter
+          color={color}
+          isResting={isResting}
+          speechRadius={speechRadius}
+        >
+          {children}
+        </BoxCharacter>
+      )}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// BoxCharacter — the original box mesh body
+// ---------------------------------------------------------------------------
+
+function BoxCharacter({ color, isResting, speechRadius, children }: {
+  color: string
+  isResting: boolean
+  speechRadius?: number
+  children?: React.ReactNode
+}) {
+  const bodyRef = useRef<THREE.Group>(null!)
+  const currentTilt = useRef(0)
+
+  useFrame(() => {
+    const body = bodyRef.current
+    if (!body) return
+    const targetTilt = isResting ? -Math.PI / 2 : 0
+    currentTilt.current += (targetTilt - currentTilt.current) * LERP_SPEED
+    body.rotation.x = currentTilt.current
+    const targetY = isResting ? -0.7 : 0
+    body.position.y += (targetY - body.position.y) * LERP_SPEED
+  })
+
+  return (
+    <>
       <group ref={bodyRef}>
         {/* 胴体 */}
         <mesh position={[0, 1.2, 0]}>
@@ -118,6 +157,6 @@ export default function Character({ position, rotationY, color = '#e8b88a', isRe
       )}
 
       {children}
-    </group>
+    </>
   )
 }

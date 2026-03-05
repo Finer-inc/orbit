@@ -7,7 +7,7 @@ export function useAgentManager() {
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [spawning, setSpawning] = useState(false)
   const [spawnError, setSpawnError] = useState<string | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
   const fetchAgents = useCallback(async () => {
     const res = await fetch('/mgmt/agents')

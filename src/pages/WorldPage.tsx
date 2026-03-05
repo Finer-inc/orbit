@@ -14,6 +14,7 @@ import CameraHUD from '../components/ui/CameraHUD'
 import ControlPanel from '../components/ui/ControlPanel'
 import { VOLUME_RANGE } from '../types/world'
 import { exportWorldGLB } from '../utils/worldExporter'
+import { commitPending, getSpriteData, disposeSpriteData } from '../stores/spriteStore'
 
 const LEGACY_STAGE = import.meta.env.VITE_STAGE === 'legacy'
 
@@ -59,13 +60,17 @@ export function WorldPage() {
     for (const [key, value] of Object.entries(workspace)) {
       if (value.trim()) filtered[key] = value.trim()
     }
-    await spawnAgent({
+    const result = await spawnAgent({
       name: name || undefined,
       workspace: Object.keys(filtered).length > 0 ? filtered : undefined,
     })
+    if (result) {
+      commitPending(result.id)
+    }
   }
 
   const handleRemove = async (id: string) => {
+    disposeSpriteData(id)
     await despawnAgent(id)
   }
 
@@ -135,6 +140,8 @@ export function WorldPage() {
                 rotationY={spirit.rotationY}
                 color={spirit.color}
                 isResting={nearBed}
+                isMoving={spirit.movingTo != null}
+                spriteData={getSpriteData(spirit.id)}
                 speechRadius={speechRadius}
               >
                 <SpiritLabel

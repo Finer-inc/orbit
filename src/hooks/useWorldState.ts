@@ -22,8 +22,8 @@ export function useWorldState(): WorldState {
   const [hour, setHour] = useState(12)
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day')
   const syncRef = useRef<{ serverHour: number; fetchedAt: number; timeScale: number } | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval>>()
-  const clockRef = useRef<ReturnType<typeof setInterval>>()
+  const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
+  const clockRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
   useEffect(() => {
     const fetchTime = async () => {
